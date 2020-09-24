@@ -1,0 +1,14 @@
+#!/bin/sh
+
+SCRIPT_PATH="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+LIBRARY_PATH=$SCRIPT_PATH/../lib
+source $LIBRARY_PATH/brew
+source $LIBRARY_PATH/link
+source $LIBRARY_PATH/installers
+
+install_brew
+update_brew
+install_fonts
+install_hstr
+update_links
+install_ohmyzsh

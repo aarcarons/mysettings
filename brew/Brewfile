@@ -1,0 +1,45 @@
+tap "adoptopenjdk/openjdk"
+
+# General commands
+brew "autossh"
+brew "cask"
+brew "cloc"
+brew "hub"
+brew "jq"
+brew "pdsh"
+brew "peco"
+brew "shellcheck"
+brew "tmux"
+brew "tree"
+brew "watch"
+brew "the_silver_searcher"
+brew "htop"
+brew "hstr"
+brew "gawk"
+brew "coreutils"
+brew "wget"
+brew "tldr"
+
+# General apps
+cask "flux"
+cask "google-chrome"
+#cask "istat-menus"
+cask "iterm2"
+cask "keepingyouawake"
+#cask "licecap"
+cask "postman"
+cask "spotify"
+cask "rectangle"
+cask "visual-studio-code"
+
+# zsh
+brew "zsh-completions"
+brew "zsh-syntax-highlighting"
+
+# Python
+brew "pyenv"
+brew "python"
+
+# Scala
+brew "sbt"
+cask "adoptopenjdk8"
