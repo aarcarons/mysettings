@@ -1,7 +1,8 @@
 # Initialize
 export ZSH=$HOME/.oh-my-zsh
+export EDITOR='code'
 ZSH_THEME="robbyrussell"
-plugins=(git osx)
+plugins=(git osx alias-tips z)
 fpath=(/usr/local/share/zsh-completions $fpath)
 source $ZSH/oh-my-zsh.sh
 source /usr/local/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
@@ -13,6 +14,9 @@ if type brew &>/dev/null; then
   autoload -Uz compinit
   compinit
 fi
+
+# z
+. /usr/local/etc/profile.d/z.sh
 
 # Environment variables
 export LANG=en_US.UTF-8
@@ -27,10 +31,18 @@ if [ -f $_ZSH_LOCAL_SETTING ]; then
     source $_ZSH_LOCAL_SETTING
 fi
 
-# pyenv
-export PYENV_ROOT="$HOME/.pyenv"
-export PATH="$PYENV_ROOT/bin:$PATH"
 
+# Override mac tools with GNU versions (installed via brew)
+export PATH="/usr/local/opt/gnu-sed/libexec/gnubin:$PATH"
+export PATH="/usr/local/opt/findutils/libexec/gnubin:$PATH"
+export PATH="/usr/local/opt/coreutils/libexec/gnubin:$PATH"
+export PATH="/usr/local/opt/grep/libexec/gnubin:$PATH"
+export PATH="/usr/local/opt/gnu-tar/libexec/gnubin:$PATH"
+export PATH="/usr/local/opt/curl/bin:$PATH"
+export PATH="/usr/local/opt/make/libexec/gnubin:$PATH"
+export PATH="/usr/local/opt/binutils/bin:$PATH"
+
+# pyenv
 if command -v pyenv 1>/dev/null 2>&1; then
   eval "$(pyenv init -)"
 fi
@@ -48,3 +60,7 @@ eval "$(hstr --show-configuration)"
 unsetopt INC_APPEND_HISTORY
 unsetopt SHARE_HISTORY
 setopt INC_APPEND_HISTORY_TIME
+
+[ -d "$HOME/.sc-tools" ] && source "$HOME/.sc-tools/dotfiles/env.zsh" #sc-tools-setup
+
+export PATH="$HOME/.poetry/bin:$PATH"

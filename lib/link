@@ -6,7 +6,7 @@ DOT_FILES_PATH=$SCRIPT_PATH/../dotfiles
 DOT_FILE_NAMES=()
 for file in $DOT_FILES_PATH/.*
 do
-    filename=`basename $file`
+    filename=$(basename $file)
 
     black_list=("." ".." ".DS_Store" "README.md")
     for black_list_name in ${black_list[@]}

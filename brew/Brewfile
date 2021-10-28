@@ -1,4 +1,6 @@
 tap "adoptopenjdk/openjdk"
+tap "homebrew/bundle"
+tap "homebrew/cask"
 
 # General commands
 brew "autossh"
@@ -15,22 +17,21 @@ brew "watch"
 brew "the_silver_searcher"
 brew "htop"
 brew "hstr"
-brew "gawk"
-brew "coreutils"
+
 brew "wget"
 brew "tldr"
 
 # General apps
-cask "flux"
-cask "google-chrome"
-#cask "istat-menus"
-cask "iterm2"
-cask "keepingyouawake"
-#cask "licecap"
-cask "postman"
-cask "spotify"
-cask "rectangle"
-cask "visual-studio-code"
+# cask "flux"
+# cask "google-chrome"
+# cask "istat-menus"
+# cask "iterm2"
+# cask "keepingyouawake"
+# cask "licecap"
+# cask "postman"
+# cask "spotify"
+# cask "rectangle"
+# cask "visual-studio-code"
 
 # zsh
 brew "zsh-completions"
@@ -43,3 +44,21 @@ brew "python"
 # Scala
 brew "sbt"
 cask "adoptopenjdk8"
+
+
+# GNU/Linux tools in Mac
+brew "bash"
+brew "gawk"
+brew "coreutils"
+brew "curl"
+brew "findutils"
+brew "gnu-sed"
+brew "gnu-tar"
+brew "gnupg"
+brew "grep"
+brew "gnu-getopt"
+brew "automake"
+brew "binutils"
+brew "diffutils"
+brew "gnutls"
+brew "gnu-indent"
