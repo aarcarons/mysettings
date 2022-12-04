@@ -1,15 +1,36 @@
-[color]
-    branch = auto
-    diff = auto
-    grep = auto
-    interactive = auto
-    status = auto
+[user]
+    name = Adrià Arcarons
+    email = adria.arcarons@gmail.com
 
 [core]
-    autocrlf = false
+    pager = delta
     editor = code --wait
-    excludesfile = ~/.gitignore.global
+    excludesfile = /Users/adriaarque/.gitignore_global
+
+[interactive]
+    diffFilter = delta --color-only
+
+[delta]
+    features = line-numbers decorations
+    whitespace-error-style = 22 reverse
+
+[delta "decorations"]
+    commit-decoration-style = bold yellow box ul
+    file-style = bold yellow ul
+    file-decoration-style = none
+
+[merge]
+    conflictstyle = diff3
+
+[diff]
+    colorMoved = default
 
 [include]
     path = .git_aliases
     path = .gitconfig.local
+
+[url "git@github.com:"]
+    insteadOf = https://github.com/
+
+[log]
+    date = iso-local
