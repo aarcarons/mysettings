@@ -1,64 +1,147 @@
 tap "adoptopenjdk/openjdk"
+tap "clojure/tools"
 tap "homebrew/bundle"
 tap "homebrew/cask"
-
-# General commands
-brew "autossh"
-brew "cask"
-brew "cloc"
-brew "hub"
-brew "jq"
-brew "pdsh"
-brew "peco"
-brew "shellcheck"
-brew "tmux"
-brew "tree"
-brew "watch"
-brew "the_silver_searcher"
-brew "htop"
-brew "hstr"
-
-brew "wget"
-brew "tldr"
-
-# General apps
-# cask "flux"
-# cask "google-chrome"
-# cask "istat-menus"
-# cask "iterm2"
-# cask "keepingyouawake"
-# cask "licecap"
-# cask "postman"
-# cask "spotify"
-# cask "rectangle"
-# cask "visual-studio-code"
-
-# zsh
-brew "zsh-completions"
-brew "zsh-syntax-highlighting"
-
-# Python
-brew "pyenv"
-brew "python"
-
-# Scala
-brew "sbt"
-cask "adoptopenjdk8"
-
-
-# GNU/Linux tools in Mac
-brew "bash"
-brew "gawk"
-brew "coreutils"
-brew "curl"
-brew "findutils"
-brew "gnu-sed"
-brew "gnu-tar"
-brew "gnupg"
-brew "grep"
-brew "gnu-getopt"
+tap "homebrew/core"
+tap "warrensbox/tap"
+# Tool for generating GNU Standards-compliant Makefiles
 brew "automake"
-brew "binutils"
+# Automatically restart SSH sessions and tunnels
+brew "autossh"
+# Bourne-Again SHell, a UNIX command interpreter
+brew "bash"
+# Statistics utility to count lines of code
+brew "cloc"
+# GNU File, Shell, and Text utilities
+brew "coreutils"
+# International domain name library (IDNA2008, Punycode and TR46)
+brew "libidn2"
+# Get a file from an HTTP, HTTPS or FTP server
+brew "curl"
+# File comparison utilities
 brew "diffutils"
-brew "gnutls"
+# Tool for exploring each layer in a docker image
+brew "dive"
+# Convert text between DOS, UNIX, and Mac formats
+brew "dos2unix"
+# More intuitive version of du in rust
+brew "dust"
+# Charset analyzer and converter
+brew "enca"
+# Modern replacement for 'ls'
+brew "exa"
+# Collection of GNU find, xargs, and locate
+brew "findutils"
+# Command-line fuzzy finder written in Go
+brew "fzf"
+# GNU awk utility
+brew "gawk"
+# GitHub command-line tool
+brew "gh"
+# Distributed revision control system
+brew "git"
+# Syntax-highlighting pager for git and diff output
+brew "git-delta"
+# Command-line option parsing utility
+brew "gnu-getopt"
+# C code prettifier
 brew "gnu-indent"
+# GNU implementation of the famous stream editor
+brew "gnu-sed"
+# GNU version of the tar archiving utility
+brew "gnu-tar"
+# Generic library support script
+brew "libtool"
+# GNU Ubiquitous Intelligent Language for Extensions
+brew "guile"
+# Low-level cryptographic library
+brew "nettle"
+# Validating, recursive, caching DNS resolver
+brew "unbound"
+# GNU Transport Layer Security (TLS) Library
+brew "gnutls"
+# GNU Pretty Good Privacy (PGP) package
+brew "gnupg"
+# Open source programming language to build simple/reliable/efficient software
+brew "go"
+# Fast linters runner for Go
+brew "golangci-lint"
+# Open-source build automation tool based on the Groovy and Kotlin DSL
+brew "gradle"
+# Graph visualization software from AT&T and Bell Labs
+brew "graphviz"
+# GNU grep, egrep and fgrep
+brew "grep"
+# Bash and zsh history suggest box
+brew "hstr"
+# Improved top (interactive process viewer)
+brew "htop"
+# Display an interface's bandwidth usage
+brew "iftop"
+# Utility for IPMI control with kernel driver or LAN interface
+brew "ipmitool"
+# Lightweight and flexible command-line JSON processor
+brew "jq"
+# Modern load testing tool, using Go and JavaScript
+brew "k6"
+# Build tool for Clojure
+brew "leiningen"
+# Utility for directing compilation
+brew "make"
+# Java-based project management
+brew "maven"
+# 'traceroute' and 'ping' in a single tool
+brew "mtr"
+# Port scanning utility for large networks
+brew "nmap"
+# Platform built on V8 to build network applications
+brew "node"
+# Manage multiple Node.js versions
+brew "nvm"
+# Apache Parquet command-line tools and utilities
+brew "parquet-tools"
+# Efficient rsh-like utility, for using hosts in parallel
+brew "pdsh"
+# Simplistic interactive filtering tool
+brew "peco"
+# Python version management
+brew "pyenv"
+# Interpreted, interactive, object-oriented programming language
+brew "python@3.8"
+# Interpreted, interactive, object-oriented programming language
+brew "python@3.9"
+# Build tool for Scala projects
+brew "sbt"
+# JVM-based programming language
+brew "scala"
+# Static analysis and lint tool, for (ba)sh scripts
+brew "shellcheck"
+# Terraform version manager inspired by rbenv
+brew "tfenv"
+# Code-search similar to ack
+brew "the_silver_searcher"
+# Simplified and community-driven man pages
+brew "tldr"
+# Display directories as trees (with optional color/HTML output)
+brew "tree"
+# Executes a program periodically, showing output fullscreen
+brew "watch"
+# Internet file retriever
+brew "wget"
+# Process YAML, JSON, XML, CSV and properties documents from the CLI
+brew "yq"
+# Tracks most-used directories to make cd smarter
+brew "z"
+# Fish shell like syntax highlighting for zsh
+brew "zsh-syntax-highlighting"
+# The Clojure Programming Language
+brew "clojure/tools/clojure"
+# AdoptOpenJDK OpenJDK (Java) Development Kit
+cask "adoptopenjdk8"
+# Screen color temperature controller
+cask "flux"
+cask "google-backup-and-sync"
+# Animated screen capture application
+cask "licecap"
+# IDE for Python programming - Community Edition
+cask "pycharm-ce"
