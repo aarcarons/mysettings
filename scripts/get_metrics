@@ -1,0 +1,61 @@
+#!/usr/bin/python3
+
+import argparse
+import json
+import os
+import shlex
+import subprocess
+import urllib.parse
+from datetime import datetime, timedelta
+from urllib.request import Request, urlopen
+
+RFC3339_UTC_ZULU_FORMAT = '%Y-%m-%dT%H:%M:%SZ'
+
+EXAMPLE_USAGE = f'''
+Example usage:
+{os.path.basename(__file__)} -p sc-events-api -m run.googleapis.com/container/cpu/utilizations
+'''
+
+
+def get_metric_data(token, project, metric_name, start_time, end_time):
+    filter = f'metric.type = "{metric_name}"'
+    base_url = f"https://monitoring.googleapis.com/v3/projects/{project}/timeSeries?"
+    qs = {
+        "filter": filter,
+        "interval.startTime": start_time.strftime(RFC3339_UTC_ZULU_FORMAT),
+        "interval.endTime": end_time.strftime(RFC3339_UTC_ZULU_FORMAT),
+    }
+
+    r = Request(f"{base_url}{urllib.parse.urlencode(qs)}")
+    r.add_header("Authorization", f"Bearer {token}")
+    r.add_header("Accept", "application/json")
+    content = urlopen(r).read()
+
+    dict = json.loads(content)
+
+    print(json.dumps(dict), flush=True)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=EXAMPLE_USAGE)
+    parser.add_argument("-p", dest="project", help="GCP Project ID", required=True)
+    parser.add_argument("-m", dest="metric", help="Metric name", required=True)
+    parser.add_argument("-s", dest="start_time")
+    parser.add_argument("-e", dest="end_time")
+    args = parser.parse_args()
+
+    token = subprocess.check_output(shlex.split("gcloud auth print-access-token -q")).decode().strip()
+
+    if args.end_time is None:
+        args.end_time = datetime.utcnow()
+    else:
+        args.end_time = datetime.fromisoformat(args.end_time)
+
+    if args.start_time is None:
+        args.start_time = (args.end_time - timedelta(hours=24))
+    else:
+        args.start_time = datetime.fromisoformat(args.start_time)
+
+    get_metric_data(token, args.project, args.metric, args.start_time, args.end_time)
