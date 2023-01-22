@@ -1,0 +1,98 @@
+#!/usr/bin/python3
+
+import argparse
+import json
+import logging
+import os
+import shlex
+import subprocess
+import sys
+import urllib.parse
+from datetime import datetime, timedelta, date
+from time import sleep
+from typing import Iterable, Tuple
+from urllib.request import Request, urlopen
+
+GITHUB_API_HOST = "https://api.github.com"
+GITHUB_PAGE_SIZE = 200
+SECONDS_BETWEEN_REQUESTS = 10
+RETAIN_KEYS = {
+    "html_url",
+    "sha",
+    "commit"
+}
+
+EXAMPLE_USAGE = f'''
+Example usage:
+- Fetch commits for the last 30 days:
+{os.path.basename(__file__)} -a aarcarons
+'''
+
+logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
+log = logging.getLogger()
+
+
+def split_range(start_date: date, end_date: date) -> Iterable[Tuple[date, date]]:
+    cursor = end_date
+    while cursor > start_date:
+        new_cursor = max(start_date, (cursor - timedelta(days=30)))
+        yield new_cursor, cursor
+        cursor = new_cursor
+
+
+def request_commits(token, author, s, e, page):
+    base_url = f"{GITHUB_API_HOST}/search/commits?"
+    qs = {
+        "q": f"author:{author} author-date:{s}..{e}",
+        "per_page": GITHUB_PAGE_SIZE,
+        "page": page
+    }
+
+    r = Request(f"{base_url}{urllib.parse.urlencode(qs)}")
+    r.add_header("Accept", "application/vnd.github+json")
+    r.add_header("Authorization", f"Bearer {token}")
+    content = urlopen(r).read()
+
+    return json.loads(content)
+
+
+def list_commits(token, author, start_date, end_date):
+    l = []
+    for s, e in split_range(start_date, end_date):
+        current_page = 1
+        item_count = GITHUB_PAGE_SIZE
+        while item_count == GITHUB_PAGE_SIZE:
+            log.info(f"Requesting page {current_page} for dates {s}..{e}")
+            j = request_commits(token, author, s, e, current_page)
+            l.extend(j["items"])
+            item_count = int(j["total_count"])
+            log.info(f"Retrieved {item_count} entries")
+            sleep(SECONDS_BETWEEN_REQUESTS)
+
+    for i in range(len(l)):
+        l[i] = {k: l[i][k] for k in RETAIN_KEYS}
+    print(json.dumps(l), flush=True)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=EXAMPLE_USAGE)
+    parser.add_argument("-a", dest="author", help="GitHub user handle", required=True)
+    parser.add_argument("-s", dest="start_date")
+    parser.add_argument("-e", dest="end_date")
+    args = parser.parse_args()
+
+    token = subprocess.check_output(shlex.split("gh config get -h github.com oauth_token")).decode().strip()
+
+    if args.end_date is None:
+        args.end_date = datetime.utcnow().date()
+    else:
+        args.end_date = date.fromisoformat(args.end_date)
+
+    if args.start_date is None:
+        args.start_date = args.end_date - timedelta(days=30)
+    else:
+        args.start_date = date.fromisoformat(args.start_date)
+
+    list_commits(token, args.author, args.start_date, args.end_date)
