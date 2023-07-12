@@ -1,29 +1,17 @@
 tap "adoptopenjdk/openjdk"
 tap "clojure/tools"
 tap "homebrew/bundle"
-tap "homebrew/cask"
 tap "homebrew/core"
-tap "warrensbox/tap"
-# Tool for generating GNU Standards-compliant Makefiles
-brew "automake"
-# Automatically restart SSH sessions and tunnels
-brew "autossh"
 # Bourne-Again SHell, a UNIX command interpreter
 brew "bash"
 # Statistics utility to count lines of code
 brew "cloc"
 # GNU File, Shell, and Text utilities
 brew "coreutils"
-# International domain name library (IDNA2008, Punycode and TR46)
-brew "libidn2"
 # Get a file from an HTTP, HTTPS or FTP server
 brew "curl"
-# File comparison utilities
-brew "diffutils"
 # Tool for exploring each layer in a docker image
 brew "dive"
-# Convert text between DOS, UNIX, and Mac formats
-brew "dos2unix"
 # More intuitive version of du in rust
 brew "dust"
 # Charset analyzer and converter
@@ -50,26 +38,12 @@ brew "gnu-indent"
 brew "gnu-sed"
 # GNU version of the tar archiving utility
 brew "gnu-tar"
-# Generic library support script
-brew "libtool"
-# GNU Ubiquitous Intelligent Language for Extensions
-brew "guile"
-# Low-level cryptographic library
-brew "nettle"
-# Validating, recursive, caching DNS resolver
-brew "unbound"
 # GNU Transport Layer Security (TLS) Library
 brew "gnutls"
 # GNU Pretty Good Privacy (PGP) package
 brew "gnupg"
 # Open source programming language to build simple/reliable/efficient software
 brew "go"
-# Fast linters runner for Go
-brew "golangci-lint"
-# Open-source build automation tool based on the Groovy and Kotlin DSL
-brew "gradle"
-# Graph visualization software from AT&T and Bell Labs
-brew "graphviz"
 # GNU grep, egrep and fgrep
 brew "grep"
 # Bash and zsh history suggest box
@@ -78,38 +52,20 @@ brew "hstr"
 brew "htop"
 # Display an interface's bandwidth usage
 brew "iftop"
-# Utility for IPMI control with kernel driver or LAN interface
-brew "ipmitool"
 # Lightweight and flexible command-line JSON processor
 brew "jq"
 # Modern load testing tool, using Go and JavaScript
 brew "k6"
-# Build tool for Clojure
-brew "leiningen"
 # Utility for directing compilation
 brew "make"
-# Java-based project management
-brew "maven"
-# 'traceroute' and 'ping' in a single tool
-brew "mtr"
-# Port scanning utility for large networks
-brew "nmap"
 # Platform built on V8 to build network applications
 brew "node"
 # Manage multiple Node.js versions
 brew "nvm"
-# Apache Parquet command-line tools and utilities
-brew "parquet-tools"
-# Efficient rsh-like utility, for using hosts in parallel
-brew "pdsh"
 # Simplistic interactive filtering tool
 brew "peco"
 # Python version management
 brew "pyenv"
-# Interpreted, interactive, object-oriented programming language
-brew "python@3.8"
-# Interpreted, interactive, object-oriented programming language
-brew "python@3.9"
 # Build tool for Scala projects
 brew "sbt"
 # JVM-based programming language
@@ -134,14 +90,22 @@ brew "yq"
 brew "z"
 # Fish shell like syntax highlighting for zsh
 brew "zsh-syntax-highlighting"
-# The Clojure Programming Language
-brew "clojure/tools/clojure"
 # AdoptOpenJDK OpenJDK (Java) Development Kit
 cask "adoptopenjdk8"
-# Screen color temperature controller
-cask "flux"
-cask "google-backup-and-sync"
 # Animated screen capture application
 cask "licecap"
 # IDE for Python programming - Community Edition
 cask "pycharm-ce"
+
+cask '1password'
+cask 'github'
+cask 'iterm2'
+cask 'visual-studio-code'
+cask 'goland'
+cask 'intellij-idea-ce'
+cask 'rectangle'
+cask 'spotify'
+cask 'zoom'
+cask 'docker'
+
+brew 'dog'
