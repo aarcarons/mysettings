@@ -1,2 +1,5 @@
 alias ll="ls -lhAG"
 alias g=git
+
+# google cloud platform
+alias gcurl='curl --header "Authorization: Bearer $(gcloud auth print-access-token)"'
