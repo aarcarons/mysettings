@@ -1,22 +1,16 @@
+export PATH="/Users/adriaarque/mysettings/scripts:$PATH"
+
+
 # Initialize
 export ZSH=$HOME/.oh-my-zsh
 export EDITOR='code'
 ZSH_THEME="robbyrussell"
-plugins=(git osx alias-tips z)
-fpath=(/usr/local/share/zsh-completions $fpath)
+
+plugins=(git alias-tips)
 source $ZSH/oh-my-zsh.sh
-source /usr/local/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
-
-# zsh-completions
-if type brew &>/dev/null; then
-  FPATH=$(brew --prefix)/share/zsh-completions:$FPATH
-
-  autoload -Uz compinit
-  compinit
-fi
 
 # z
-. /usr/local/etc/profile.d/z.sh
+#. /usr/local/etc/profile.d/z.sh
 
 # Environment variables
 export LANG=en_US.UTF-8
@@ -43,9 +37,11 @@ export PATH="/usr/local/opt/make/libexec/gnubin:$PATH"
 export PATH="/usr/local/opt/binutils/bin:$PATH"
 
 # pyenv
-if command -v pyenv 1>/dev/null 2>&1; then
-  eval "$(pyenv init -)"
-fi
+export PYENV_ROOT="$HOME/.pyenv"
+command -v pyenv >/dev/null || export PATH="$PYENV_ROOT/bin:$PATH"
+eval "$(pyenv init -)"
+
+
 
 # Shell history
 eval "$(hstr --show-configuration)"
@@ -64,3 +60,11 @@ setopt INC_APPEND_HISTORY_TIME
 [ -d "$HOME/.sc-tools" ] && source "$HOME/.sc-tools/dotfiles/env.zsh" #sc-tools-setup
 
 export PATH="$HOME/.poetry/bin:$PATH"
+
+# https://github.com/zsh-users/zsh-syntax-highlighting#why-must-zsh-syntax-highlightingzsh-be-sourced-at-the-end-of-the-zshrc-file
+source /usr/local/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+
+
+#zprof 
+#zmodload -u zsh/zprof
+

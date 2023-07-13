@@ -1,3 +1,23 @@
+# Steps to get a new laptop ready
+- Install oh-my-zsh
+- Install brew
+- Install packaged from brewfile
+- Symlink .gitconfig, .gitignore, .gitignore_global, .brewfile
+- Configure 1Password ssh agent
+- Configure 1Password for commit signing
+- VPN
+- Add the /scripts folders in PATH
+- Setup iterm config file
+
+
+# git aliases
+The `.git_aliases` file is a snapshot of what is found [in this repo](https://github.com/GitAlias/gitalias). Follow the instructions there to install it.
+
+# brewfile
+Dump currently installed packages to Brewfile
+- brew bundle dump --global --force --all --describe
+
+
 # Git commands for my usual git workflows:
 
 ## Create feature branch from master, sync it with remote, close it.

@@ -1,23 +1,14 @@
 #!/bin/sh
 
-SCRIPT_PATH="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-DOT_FILES_PATH=$SCRIPT_PATH/../dotfiles
+DOT_FILE_NAMES=(
+    ".gitconfig"
+    ".gitignore_global"
+    ".zshrc"
+    ".zshrc.local"
+    ".zshrc_aliases"
+    "Brewfile"
+)
 
-DOT_FILE_NAMES=()
-for file in $DOT_FILES_PATH/.*
-do
-    filename=$(basename $file)
-
-    black_list=("." ".." ".DS_Store" "README.md")
-    for black_list_name in ${black_list[@]}
-    do
-        if [ $black_list_name == $filename ]; then
-            continue 2
-        fi
-    done
-
-    DOT_FILE_NAMES+=($filename)
-done
 
 link_dotfiles() {
     for filename in ${DOT_FILE_NAMES[@]}
