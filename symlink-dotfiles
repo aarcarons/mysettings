@@ -1,4 +1,7 @@
-#!/bin/sh
+#!/bin/bash
+
+SCRIPT_PATH="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
 
 DOT_FILE_NAMES=(
     ".gitconfig"
@@ -9,22 +12,24 @@ DOT_FILE_NAMES=(
     "Brewfile"
 )
 
-
 link_dotfiles() {
-    for filename in ${DOT_FILE_NAMES[@]}
-    do
-        ln -s -v $DOT_FILES_PATH/$filename $HOME/$filename
+    for filename in "${DOT_FILE_NAMES[@]}"; do
+        source_file="$SCRIPT_PATH/$filename"
+        target_file="$HOME/$filename"
+        
+        if [ ! -f "$source_file" ]; then
+            echo "Source file '$source_file' does not exist. Skipping..."
+            continue
+        fi
+        
+        ln -s -v "$source_file" "$target_file"
     done
 }
 
 unlink_dotfiles() {
-    for filename in ${DOT_FILE_NAMES[@]}
-    do
-        dotfile=$HOME/$filename
-
-        if [ -e $dotfile ]; then
-            rm -rf -v $dotfile
-        fi
+    for filename in "${DOT_FILE_NAMES[@]}"; do
+        dotfile="$HOME/$filename"
+        rm -f -v "$dotfile"
     done
 }
 
@@ -35,4 +40,5 @@ update_links() {
     echo "Creating symlinks..."
     link_dotfiles
 }
-export -f update_links
+
+update_links
