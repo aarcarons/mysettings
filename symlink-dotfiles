@@ -10,6 +10,7 @@ DOT_FILE_NAMES=(
     ".zshrc.local"
     ".zshrc_aliases"
     "Brewfile"
+    ".git_aliases"
 )
 
 link_dotfiles() {
