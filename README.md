@@ -3,9 +3,9 @@
 - Configure 1Password ssh agent
 - Clone this repo
 - Apply macOS settings (run settings/defaults script)
-- Install oh-my-zsh
 - Install brew
-- Install packaged from brewfile
+- Install packages from brewfile
+- Install oh-my-zsh
 - Symlink .gitconfig, .gitignore, .gitignore_global, .brewfile
 - Configure 1Password for commit signing
 - VPN
