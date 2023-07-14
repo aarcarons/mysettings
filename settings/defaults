@@ -7,11 +7,6 @@ defaults write com.apple.finder CreateDesktop -bool FALSE
 
 defaults write -g NSNavPanelExpandedStateForSaveMode -boolean true
 
-# The directory needs to be created upfront
-defaults write com.apple.screencapture location ~/Pictures/Screenshots
-
-defaults write com.apple.dock autohide -bool true
-
 defaults write com.apple.finder _FXShowPosixPathInTitle -bool true
 
 defaults write com.apple.finder AppleShowAllFiles -bool true
@@ -19,6 +14,8 @@ defaults write com.apple.finder AppleShowAllFiles -bool true
 defaults write com.googlecode.iterm2.plist PrefsCustomFolder -string "$SCRIPT_PATH/iterm"
 
 defaults write com.googlecode.iterm2.plist LoadPrefsFromCustomFolder -bool true
+
+defaults write -g com.apple.swipescrolldirection -bool FALSE
 
 killall Finder
 

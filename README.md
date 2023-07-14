@@ -1,9 +1,12 @@
-# Steps to get a new laptop ready
+# Checklist to get a new laptop ready
+- Setup 1Password Desktop
+- Configure 1Password ssh agent
+- Clone this repo
+- Apply macOS settings (run settings/defaults script)
 - Install oh-my-zsh
 - Install brew
 - Install packaged from brewfile
 - Symlink .gitconfig, .gitignore, .gitignore_global, .brewfile
-- Configure 1Password ssh agent
 - Configure 1Password for commit signing
 - VPN
 - Add the /scripts folders in PATH
