@@ -18,7 +18,7 @@ The `.git_aliases` file is a snapshot of what is found [in this repo](https://gi
 
 # brewfile
 Dump currently installed packages to Brewfile
-- brew bundle dump --global --force --all --describe
+- brew bundle dump --all --describe
 
 
 # Git commands for my usual git workflows:

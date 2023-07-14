@@ -12,6 +12,8 @@ brew "coreutils"
 brew "curl"
 # Tool for exploring each layer in a docker image
 brew "dive"
+# Command-line DNS client
+brew "dog"
 # More intuitive version of du in rust
 brew "dust"
 # Charset analyzer and converter
@@ -92,20 +94,23 @@ brew "z"
 brew "zsh-syntax-highlighting"
 # AdoptOpenJDK OpenJDK (Java) Development Kit
 cask "adoptopenjdk8"
+# App to build and share containerized applications and microservices
+cask "docker"
+# Desktop client for GitHub repositories
+cask "github"
+# Go (golang) IDE
+cask "goland"
+# IDE for Java development - community edition
+cask "intellij-idea-ce"
+# Terminal emulator as alternative to Apple's Terminal app
+cask "iterm2"
 # Animated screen capture application
 cask "licecap"
 # IDE for Python programming - Community Edition
 cask "pycharm-ce"
-
-cask '1password'
-cask 'github'
-cask 'iterm2'
-cask 'visual-studio-code'
-cask 'goland'
-cask 'intellij-idea-ce'
-cask 'rectangle'
-cask 'spotify'
-cask 'zoom'
-cask 'docker'
-
-brew 'dog'
+# Move and resize windows using keyboard shortcuts or snap areas
+cask "rectangle"
+# Music streaming service
+cask "spotify"
+# Open-source code editor
+cask "visual-studio-code"
