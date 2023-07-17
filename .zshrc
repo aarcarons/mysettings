@@ -1,38 +1,19 @@
-export PATH="$HOME/source/mysettings/scripts:$PATH"
-
-
-# Initialize
-export ZSH=$HOME/.oh-my-zsh
-export EDITOR='code'
-ZSH_THEME="robbyrussell"
-
-plugins=(git alias-tips)
-source $ZSH/oh-my-zsh.sh
-
-
-# Environment variables
 export LANG=en_US.UTF-8
 export TERM=xterm-256color
-
-# Bash aliases
+export EDITOR='code'
 source ~/.zshrc_aliases
+
+# omz
+export ZSH=$HOME/.oh-my-zsh
+ZSH_THEME="robbyrussell"
+plugins=(git alias-tips)
+source $ZSH/oh-my-zsh.sh
 
 # Load local settings
 _ZSH_LOCAL_SETTING="$HOME/.zshrc.local"
 if [ -f $_ZSH_LOCAL_SETTING ]; then
     source $_ZSH_LOCAL_SETTING
 fi
-
-
-# Override mac tools with GNU versions (installed via brew)
-export PATH="/usr/local/opt/gnu-sed/libexec/gnubin:$PATH"
-export PATH="/usr/local/opt/findutils/libexec/gnubin:$PATH"
-export PATH="/usr/local/opt/coreutils/libexec/gnubin:$PATH"
-export PATH="/usr/local/opt/grep/libexec/gnubin:$PATH"
-export PATH="/usr/local/opt/gnu-tar/libexec/gnubin:$PATH"
-export PATH="/usr/local/opt/curl/bin:$PATH"
-export PATH="/usr/local/opt/make/libexec/gnubin:$PATH"
-export PATH="/usr/local/opt/binutils/bin:$PATH"
 
 # pyenv
 export PYENV_ROOT="$HOME/.pyenv"
@@ -49,12 +30,26 @@ eval "$(hstr --show-configuration)"
 ## see https://askubuntu.com/questions/23630/how-do-you-share-history-between-terminals-in-zsh
 ## https://github.com/dvorka/hstr/issues/400
 ## https://github.com/ohmyzsh/ohmyzsh/issues/2537
-
 unsetopt INC_APPEND_HISTORY
 unsetopt SHARE_HISTORY
 setopt INC_APPEND_HISTORY_TIME
 
+PROMPT='%{$fg[green]%}%c%{$reset_color%}$(git_prompt_info) %{$fg[yellow]%}%(!.#.$)%{$reset_color%} '
+
+
+# PATH exports
+export PATH="$HOME/source/mysettings/scripts:$PATH"
+##  Override mac tools with GNU versions (installed via brew)
+export PATH="/usr/local/opt/gnu-sed/libexec/gnubin:$PATH"
+export PATH="/usr/local/opt/findutils/libexec/gnubin:$PATH"
+export PATH="/usr/local/opt/coreutils/libexec/gnubin:$PATH"
+export PATH="/usr/local/opt/grep/libexec/gnubin:$PATH"
+export PATH="/usr/local/opt/gnu-tar/libexec/gnubin:$PATH"
+export PATH="/usr/local/opt/curl/bin:$PATH"
+export PATH="/usr/local/opt/make/libexec/gnubin:$PATH"
+export PATH="/usr/local/opt/binutils/bin:$PATH"
 export PATH="$HOME/.poetry/bin:$PATH"
+
 
 # https://github.com/zsh-users/zsh-syntax-highlighting#why-must-zsh-syntax-highlightingzsh-be-sourced-at-the-end-of-the-zshrc-file
 source /usr/local/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh

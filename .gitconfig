@@ -3,10 +3,14 @@
     email = adria.arcarons@gmail.com
     signingkey = ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFL58zYj014IBKZBde1lqwK0mY3okM8x9wV2FFdICHHJ
 
+[include]
+    path = .git_aliases
+    path = .gitconfig.local
+
 [core]
     pager = delta
     editor = code --wait
-    excludesfile = /Users/adriaarque/.gitignore_global
+    excludesfile = ~/.gitignore_global
 
 [interactive]
     diffFilter = delta --color-only
@@ -26,20 +30,12 @@
 [diff]
     colorMoved = default
 
-[include]
-    path = .git_aliases
-    path = .gitconfig.local
-
 [url "git@github.com:"]
     insteadOf = https://github.com/
 
 [log]
     date = iso-local
-[filter "lfs"]
-	smudge = git-lfs smudge -- %f
-	process = git-lfs filter-process
-	required = true
-	clean = git-lfs clean -- %f
+
 [gpg]
 	format = ssh
 [gpg "ssh"]

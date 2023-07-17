@@ -12,6 +12,7 @@
 - Add the /scripts folders in PATH
 - Setup iterm config file
 - Setup gcloud CLI
+- .gitconfig.local overriding git email with company's email
 
 
 # git aliases

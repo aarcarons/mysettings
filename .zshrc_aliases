@@ -1,3 +1,5 @@
+# This script is sourced from .zshrc
+
 alias ls="exa"
 alias ll="exa --all --long --header --group-directories-first --sort=modified --reverse"
 alias g=git
