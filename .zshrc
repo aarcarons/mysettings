@@ -1,13 +1,14 @@
 export LANG=en_US.UTF-8
 export TERM=xterm-256color
 export EDITOR='code'
-source ~/.zshrc_aliases
 
 # omz
 export ZSH=$HOME/.oh-my-zsh
 ZSH_THEME="robbyrussell"
 plugins=(git alias-tips)
 source $ZSH/oh-my-zsh.sh
+export UPDATE_ZSH_DAYS=14
+export DISABLE_UPDATE_PROMPT=true # accept updates by default
 
 # Load local settings
 _ZSH_LOCAL_SETTING="$HOME/.zshrc.local"
@@ -34,8 +35,6 @@ unsetopt INC_APPEND_HISTORY
 unsetopt SHARE_HISTORY
 setopt INC_APPEND_HISTORY_TIME
 
-PROMPT='%{$fg[green]%}%c%{$reset_color%}$(git_prompt_info) %{$fg[yellow]%}%(!.#.$)%{$reset_color%} '
-
 
 # PATH exports
 export PATH="$HOME/source/mysettings/scripts:$PATH"
@@ -50,6 +49,7 @@ export PATH="/usr/local/opt/make/libexec/gnubin:$PATH"
 export PATH="/usr/local/opt/binutils/bin:$PATH"
 export PATH="$HOME/.poetry/bin:$PATH"
 
+source ~/.zshrc_aliases
 
 # https://github.com/zsh-users/zsh-syntax-highlighting#why-must-zsh-syntax-highlightingzsh-be-sourced-at-the-end-of-the-zshrc-file
 source /opt/homebrew/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
