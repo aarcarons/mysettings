@@ -11,6 +11,7 @@
 - VPN
 - Add the /scripts folders in PATH
 - Setup iterm config file
+- Setup gcloud CLI
 
 
 # git aliases

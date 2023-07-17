@@ -1,4 +1,5 @@
-alias ll="ls -lhAG"
+alias ls="exa"
+alias ll="exa --all --long --header --group-directories-first --sort=modified --reverse"
 alias g=git
 
 # google cloud platform

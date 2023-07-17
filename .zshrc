@@ -1,4 +1,4 @@
-export PATH="/Users/adriaarque/mysettings/scripts:$PATH"
+export PATH="$HOME/source/mysettings/scripts:$PATH"
 
 
 # Initialize
@@ -9,8 +9,6 @@ ZSH_THEME="robbyrussell"
 plugins=(git alias-tips)
 source $ZSH/oh-my-zsh.sh
 
-# z
-#. /usr/local/etc/profile.d/z.sh
 
 # Environment variables
 export LANG=en_US.UTF-8
@@ -42,7 +40,6 @@ command -v pyenv >/dev/null || export PATH="$PYENV_ROOT/bin:$PATH"
 eval "$(pyenv init -)"
 
 
-
 # Shell history
 eval "$(hstr --show-configuration)"
 ## This options are mutually exclusive: INC_APPEND_HISTORY, SHARE_HISTORY and INC_APPEND_HISTORY_TIME
@@ -57,14 +54,7 @@ unsetopt INC_APPEND_HISTORY
 unsetopt SHARE_HISTORY
 setopt INC_APPEND_HISTORY_TIME
 
-[ -d "$HOME/.sc-tools" ] && source "$HOME/.sc-tools/dotfiles/env.zsh" #sc-tools-setup
-
 export PATH="$HOME/.poetry/bin:$PATH"
 
 # https://github.com/zsh-users/zsh-syntax-highlighting#why-must-zsh-syntax-highlightingzsh-be-sourced-at-the-end-of-the-zshrc-file
 source /usr/local/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
-
-
-#zprof 
-#zmodload -u zsh/zprof
-
