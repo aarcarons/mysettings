@@ -6,6 +6,7 @@
 - Install brew
 - Install packages from brewfile
 - Install oh-my-zsh
+   - Install alias-tips: https://github.com/djui/alias-tips
 - Symlink .gitconfig, .gitignore, .gitignore_global, .brewfile
 - Configure 1Password for commit signing
 - VPN
