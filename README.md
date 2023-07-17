@@ -13,6 +13,11 @@
 - Setup iterm config file
 - Setup gcloud CLI
 - .gitconfig.local overriding git email with company's email
+- Config username "adriaarcarons" for ssh logins in (~/.ssh/config)
+```
+Host *
+	User adriaarcarons
+```
 
 
 # git aliases

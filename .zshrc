@@ -37,17 +37,19 @@ setopt INC_APPEND_HISTORY_TIME
 
 
 # PATH exports
-export PATH="$HOME/source/mysettings/scripts:$PATH"
+PATH="$HOME/source/mysettings/scripts:$PATH"
 ##  Override mac tools with GNU versions (installed via brew)
-export PATH="/usr/local/opt/gnu-sed/libexec/gnubin:$PATH"
-export PATH="/usr/local/opt/findutils/libexec/gnubin:$PATH"
-export PATH="/usr/local/opt/coreutils/libexec/gnubin:$PATH"
-export PATH="/usr/local/opt/grep/libexec/gnubin:$PATH"
-export PATH="/usr/local/opt/gnu-tar/libexec/gnubin:$PATH"
-export PATH="/usr/local/opt/curl/bin:$PATH"
-export PATH="/usr/local/opt/make/libexec/gnubin:$PATH"
-export PATH="/usr/local/opt/binutils/bin:$PATH"
-export PATH="$HOME/.poetry/bin:$PATH"
+PATH="/usr/local/opt/gnu-sed/libexec/gnubin:$PATH"
+PATH="/usr/local/opt/findutils/libexec/gnubin:$PATH"
+PATH="/usr/local/opt/coreutils/libexec/gnubin:$PATH"
+PATH="/usr/local/opt/grep/libexec/gnubin:$PATH"
+PATH="/usr/local/opt/gnu-tar/libexec/gnubin:$PATH"
+PATH="/usr/local/opt/curl/bin:$PATH"
+PATH="/usr/local/opt/make/libexec/gnubin:$PATH"
+PATH="/usr/local/opt/binutils/bin:$PATH"
+PATH="$HOME/.poetry/bin:$PATH"
+
+export PATH
 
 source ~/.zshrc_aliases
 
