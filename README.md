@@ -7,10 +7,9 @@
 - Install packages from brewfile
 - Install oh-my-zsh
    - Install alias-tips: https://github.com/djui/alias-tips
-- Symlink .gitconfig, .gitignore, .gitignore_global, .brewfile
+- Symlink files via symlink-dotfiles script
 - Configure 1Password for commit signing
 - VPN
-- Add the /scripts folders in PATH
 - Setup iterm config file
 - Setup gcloud CLI
 - .gitconfig.local overriding git email with company's email
