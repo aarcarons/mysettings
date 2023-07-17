@@ -66,6 +66,8 @@ brew "node"
 brew "nvm"
 # Simplistic interactive filtering tool
 brew "peco"
+# Python package management tool
+brew "poetry"
 # Python version management
 brew "pyenv"
 # Build tool for Scala projects
