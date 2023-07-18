@@ -9,6 +9,11 @@ help() {
   exit "$#"
 }
 
+if [[ -z "$THANOS_URL" ]]; then
+  echo "Error: THANOS_URL environment variable is not defined."
+  exit 1
+fi
+
 if [[ "$#" -lt 1 ]]; then
   help
 fi

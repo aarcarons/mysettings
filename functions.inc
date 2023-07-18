@@ -1,4 +1,4 @@
-#!/bin/bash
+# These functions are loaded in .zshrc
 
 # Update repos cache if needed
 # Trigger an asynchronous update if cache is too old
@@ -17,7 +17,7 @@ update_cache_maybe ()
 gsc ()
 {
     local repo=$1;
-    update_cache_maybe
+    update_cache_maybe || return
     if [ -z "$repo" ]; then
         # TODO: return from func if ESC is pressed in peco
         repo=$(peco ~/.repos.txt | cut -d' ' -f1)

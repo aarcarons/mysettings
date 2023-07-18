@@ -51,6 +51,14 @@ PATH="$HOME/.poetry/bin:$PATH"
 
 export PATH
 
+# Load custom functions
+if [[ -f "$HOME/source/mysettings/functions.inc" ]]; then
+	source "$HOME/source/mysettings/functions.inc"
+else
+	echo >&2 "WARNING: can't load shell functions"
+fi
+
+
 source ~/.zshrc_aliases
 
 # https://github.com/zsh-users/zsh-syntax-highlighting#why-must-zsh-syntax-highlightingzsh-be-sourced-at-the-end-of-the-zshrc-file
