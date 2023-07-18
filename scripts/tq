@@ -1,0 +1,18 @@
+#!/bin/bash
+
+help() {
+  if [[ "$#" -gt 0 ]]; then
+    echo "$@"
+    echo
+  fi
+  echo "tq query"
+  exit "$#"
+}
+
+if [[ "$#" -lt 1 ]]; then
+  help
+fi
+
+if ! curl -sS --get "http://${THANOS_URL}/api/v1/query" --data-urlencode "query=$*" | jq '.data.result[]' ; then
+  curl -sS --get "http://${THANOS_URL}/api/v1/query" --data-urlencode "query=$*" | jq .
+fi
