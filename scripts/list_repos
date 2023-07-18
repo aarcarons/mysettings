@@ -1,26 +1,31 @@
 #!/bin/bash
 
-set -eu -o pipefail
+set -euo pipefail
+
+# Check if gh is installed and authenticated
+if ! command -v gh >/dev/null || ! gh auth status >/dev/null; then
+  echo "Error: gh not authenticated or not installed. Install and run gh auth login"
+  exit 1
+fi
 
 github_page_size=100
 max_pages=25
+tmp_files_path="/tmp/repos_cache_tool"
+
+mkdir -p "$tmp_files_path"
+rm -f "$tmp_files_path/page*.json"
 
 page=1
 length=$github_page_size
-tmp_files_path=/tmp/repos_cache_tool
 
-mkdir -p $tmp_files_path
-rm -f $tmp_files_path/page*.json
-
-while [ $page -lt $max_pages ] && [ $length -eq $github_page_size ]; do
-    out=$(printf "$tmp_files_path/page%02d.json" $page)
-    r=$(gh api "/orgs/soundcloud/repos?per_page=$github_page_size&page=$page")
-    length=$(echo $r | jq '. | length')
-    #echo "Found $length repositories in page $page" >&2
-    echo $r > $out
-    (( page++ ))
+while [ "$page" -lt "$max_pages" ] && [ "$length" -eq "$github_page_size" ]; do
+  out=$(printf "$tmp_files_path/page%02d.json" "$page")
+  response=$(gh api "/orgs/soundcloud/repos?per_page=$github_page_size&page=$page")
+  length=$(echo "$response" | jq '. | length')
+  echo "$response" > "$out"
+  ((page++))
 done
 
-cat $tmp_files_path/page*.json| jq -r '.[] | "\(.name)\t\(.description)"' | column -s $'\t' -t > ~/.repos.txt
+cat $tmp_files_path/page*.json | jq -r '.[] | "\(.name)\t\(.description)"' | column -s $'\t' -t > ~/.repos.txt
 
 rm -f $tmp_files_path/page*.json
