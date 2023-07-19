@@ -1,5 +1,7 @@
 # These functions are loaded in .zshrc
 
+export SC_SOURCE_CODE_ROOT=~/source/soundcloud/
+
 # Update repos cache if needed
 # Trigger an asynchronous update if cache is too old
 # Trigger a synchronous update if no cache
@@ -19,12 +21,15 @@ gsc ()
     local repo=$1;
     update_cache_maybe || return
     if [ -z "$repo" ]; then
-        # TODO: return from func if ESC is pressed in peco
-        repo=$(peco ~/.repos.txt | cut -d' ' -f1)
+        if ! repo=$(peco --on-cancel error ~/.repos.txt); then
+            echo "Error: Peco failed or cancelled"
+            return
+        fi
+        repo=$(echo "$repo" | cut -d' ' -f1)
     fi
-    if ! [[ -d ~/Soundcloud/$repo ]]; then
-        cd ~/Soundcloud;
-        git clone git@github.com:soundcloud/$repo.git || return;
+    if ! [[ -d "$SC_SOURCE_CODE_ROOT/$repo" ]]; then
+        cd "$SC_SOURCE_CODE_ROOT" || return;
+        git clone "git@github.com:soundcloud/$repo.git" || return;
     fi;
-    cd ~/Soundcloud/$repo
+    cd "$SC_SOURCE_CODE_ROOT/$repo" || exit
 }
