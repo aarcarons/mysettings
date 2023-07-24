@@ -1,11 +1,20 @@
-tap "adoptopenjdk/openjdk"
 tap "clojure/tools"
 tap "homebrew/bundle"
 tap "homebrew/core"
 # Bourne-Again SHell, a UNIX command interpreter
 brew "bash"
+# Cryptography and SSL/TLS Toolkit
+brew "openssl@3"
+# Library for command-line editing
+brew "readline"
+# Command-line interface for SQLite
+brew "sqlite"
+# General-purpose data compression with high compression ratio
+brew "xz"
 # Statistics utility to count lines of code
 brew "cloc"
+# Defines a standard way of committing rules and communicating it
+brew "commitizen"
 # GNU File, Shell, and Text utilities
 brew "coreutils"
 # Get a file from an HTTP, HTTPS or FTP server
@@ -54,6 +63,8 @@ brew "hstr"
 brew "htop"
 # Display an interface's bandwidth usage
 brew "iftop"
+# Utility for IPMI control with kernel driver or LAN interface
+brew "ipmitool"
 # Lightweight and flexible command-line JSON processor
 brew "jq"
 # Modern load testing tool, using Go and JavaScript
@@ -68,6 +79,8 @@ brew "nvm"
 brew "peco"
 # Python package management tool
 brew "poetry"
+# Parallel versions of OpenSSH and related tools
+brew "pssh"
 # Python version management
 brew "pyenv"
 # Build tool for Scala projects
@@ -76,6 +89,8 @@ brew "sbt"
 brew "scala"
 # Static analysis and lint tool, for (ba)sh scripts
 brew "shellcheck"
+# Tool Command Language
+brew "tcl-tk"
 # Terraform version manager inspired by rbenv
 brew "tfenv"
 # Code-search similar to ack
@@ -92,10 +107,10 @@ brew "wget"
 brew "yq"
 # Tracks most-used directories to make cd smarter
 brew "z"
+# General-purpose lossless data-compression library
+brew "zlib"
 # Fish shell like syntax highlighting for zsh
 brew "zsh-syntax-highlighting"
-# AdoptOpenJDK OpenJDK (Java) Development Kit
-cask "adoptopenjdk8"
 # App to build and share containerized applications and microservices
 cask "docker"
 # Desktop client for GitHub repositories
@@ -114,5 +129,7 @@ cask "pycharm-ce"
 cask "rectangle"
 # Music streaming service
 cask "spotify"
+# JDK from the Eclipse Foundation (Adoptium)
+cask "temurin"
 # Open-source code editor
 cask "visual-studio-code"
