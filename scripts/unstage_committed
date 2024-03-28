@@ -51,8 +51,7 @@ fork_point=$(git merge-base $current_branch master)
 
 # Determine files that will be affected by the reset
 affected_files=$(git diff --name-only "$fork_point" HEAD)
-unstaged_changes=$(git status --porcelain | grep "^ M" | cut -c 4-)
-
+unstaged_changes=$(git status --porcelain | grep "^ M" | cut -c 4-) || true
 
 for file in $affected_files; do
     if echo "$unstaged_changes" | grep -Fxq "$file"; then
