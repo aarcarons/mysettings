@@ -1,6 +1,6 @@
 export LANG=en_US.UTF-8
 export TERM=xterm-256color
-export EDITOR='code'
+export EDITOR='code --wait --new-window'
 
 # omz
 export ZSH=$HOME/.oh-my-zsh
