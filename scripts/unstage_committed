@@ -1,0 +1,71 @@
+#!/bin/bash
+
+set -euo pipefail
+
+# Scripts that brings back the changes that were committed to branch but not merged to master as if they were not committed yet for review
+
+
+current_branch=$(git rev-parse --abbrev-ref HEAD)
+if [ "$current_branch" = "master" ] || [ "$current_branch" = "main" ]; then
+    echo "Current branch is $current_branch. This script should not be run on trunk branch. Aborting."
+    exit 1
+fi
+
+git fetch --quiet
+
+# Check if the local branch exists on the remote
+branch_exists_on_remote=$(git ls-remote --heads origin $current_branch)
+if [ -z "$branch_exists_on_remote" ]; then
+    echo "The local branch '$current_branch' does not exist on the remote. Please push the branch before proceeding. Aborting."
+    exit 1
+fi
+
+# Check that local and remote branches are in sync
+local_commits=$(git rev-list --count HEAD ^origin/$current_branch)
+remote_commits=$(git rev-list --count origin/$current_branch ^HEAD)
+if [ "$remote_commits" -gt 0 ]; then
+    echo "Your local branch is behind its remote counterpart by $remote_commits commit(s). Please pull the latest changes first. Aborting."
+    exit 1
+fi
+
+# Function to ask user for confirmation
+ask_confirmation() {
+    while true; do
+        read -p "$1 (yes/no): " user_choice
+        case $user_choice in
+            yes) break ;;
+            no) echo "Aborting."; exit 1;;
+            *) echo "Invalid input. Please answer yes or no.";;
+        esac
+    done
+}
+
+
+
+if [ "$local_commits" -gt 0 ]; then
+    ask_confirmation "You have $local_commits unpushed commit(s) in your local branch that are not in the remote. Proceeding will undo your unpushed commits, moving their changes to the staging area but removing them from your branch's history. You will not lose work, but you will need to recommit these changes if you plan to push them later. This could affect collaboration if these commits were meant for review. Ensure you are ready to manage these changes before continuing. Do you still want to proceed?"
+fi
+
+
+fork_point=$(git merge-base $current_branch master)
+
+# Determine files that will be affected by the reset
+affected_files=$(git diff --name-only "$fork_point" HEAD)
+unstaged_changes=$(git status --porcelain | grep "^ M" | cut -c 4-)
+
+
+for file in $affected_files; do
+    if echo "$unstaged_changes" | grep -Fxq "$file"; then
+        echo "You have unstaged changes in files that would be affected by the reset. This would result in a situation where your local changes would be preserved but the ones from the commits we want to restore would be ignored. I can't let you continue since this is gonna be a mess. Stash your local changes, or decide what to do."
+        exit 1
+    fi
+done
+
+
+if ! git diff-index --quiet HEAD --; then # If there are no specific unstaged changes found, check for any uncommitted changes in the repo
+    ask_confirmation "You have uncommitted changes. Proceeding without committing your changes will mix them with changes unstaged by the reset, potentially complicating the management of your workspace. You'll retain all modifications, but distinguishing between previously committed and uncommitted changes may become difficult. Ensure you're prepared to carefully review and organize these changes before continuing. Do you still want to proceed?"
+fi
+
+
+# Fiiiinally, let's do the job
+git reset --mixed $fork_point
