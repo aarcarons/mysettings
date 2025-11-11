@@ -91,6 +91,8 @@ brew "protobuf@29"
 brew "pyenv"
 # Rsync for cloud storage
 brew "rclone"
+# Search tool like grep and The Silver Searcher
+brew "ripgrep"
 # Build tool for Scala projects
 brew "sbt"
 # JVM-based programming language
@@ -99,8 +101,6 @@ brew "scala"
 brew "shellcheck"
 # Tool Command Language
 brew "tcl-tk"
-# Code-search similar to ack
-brew "the_silver_searcher"
 # Simplified and community-driven man pages
 brew "tldr"
 # Display directories as trees (with optional color/HTML output)
