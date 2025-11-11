@@ -7,8 +7,6 @@ brew "asdf"
 brew "xz"
 # Cryptography and SSL/TLS Toolkit
 brew "openssl@3"
-# Library for command-line editing
-brew "readline"
 # Official Amazon AWS command-line interface
 brew "awscli"
 # Bourne-Again SHell, a UNIX command interpreter
@@ -91,6 +89,8 @@ brew "peco"
 brew "poetry"
 # Protocol buffers (Google's data interchange format)
 brew "protobuf@29"
+# Python version management
+brew "pyenv"
 # Rsync for cloud storage
 brew "rclone"
 # Build tool for Scala projects
@@ -160,7 +160,6 @@ vscode "ms-python.vscode-python-envs"
 vscode "ms-vscode-remote.remote-wsl"
 vscode "ms-vscode-remote.vscode-remote-extensionpack"
 vscode "ms-vscode.makefile-tools"
-vscode "ms-vscode.remote-explorer"
 vscode "ms-vscode.remote-server"
 vscode "msyrus.go-doc"
 vscode "redhat.vscode-xml"
@@ -175,6 +174,7 @@ vscode "visualstudioexptteam.intellicode-api-usage-examples"
 vscode "visualstudioexptteam.vscodeintellicode"
 vscode "vscjava.migrate-java-to-azure"
 vscode "vscjava.vscode-java-pack"
+vscode "vscjava.vscode-java-upgrade"
 vscode "yzhang.markdown-all-in-one"
 go "github.com/rogpeppe/godef"
 go "golang.org/x/tools/gopls"
