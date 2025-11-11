@@ -113,8 +113,6 @@ brew "watch"
 brew "wget"
 # Process YAML, JSON, XML, CSV and properties documents from the CLI
 brew "yq"
-# Tracks most-used directories to make cd smarter
-brew "z"
 # Fish shell like syntax highlighting for zsh
 brew "zsh-syntax-highlighting"
 # Command-line interface for 1Password
