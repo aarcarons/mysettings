@@ -1,22 +1,30 @@
 tap "clojure/tools"
 tap "homebrew/bundle"
-tap "homebrew/core"
-# Bourne-Again SHell, a UNIX command interpreter
-brew "bash"
+tap "homebrew/cask-versions"
+# Distributed revision control system
+brew "git"
+# Extendable version manager with support for Ruby, Node.js, Erlang & more
+brew "asdf"
+# General-purpose data compression with high compression ratio
+brew "xz"
 # Cryptography and SSL/TLS Toolkit
 brew "openssl@3"
 # Library for command-line editing
 brew "readline"
-# Command-line interface for SQLite
-brew "sqlite"
-# General-purpose data compression with high compression ratio
-brew "xz"
+# Official Amazon AWS command-line interface
+brew "awscli"
+# Bourne-Again SHell, a UNIX command interpreter
+brew "bash"
 # Statistics utility to count lines of code
 brew "cloc"
+# Cross-platform make
+brew "cmake"
 # Defines a standard way of committing rules and communicating it
 brew "commitizen"
 # GNU File, Shell, and Text utilities
 brew "coreutils"
+# Zstandard is a real-time compression algorithm
+brew "zstd"
 # Get a file from an HTTP, HTTPS or FTP server
 brew "curl"
 # Tool for exploring each layer in a docker image
@@ -27,8 +35,8 @@ brew "dog"
 brew "dust"
 # Charset analyzer and converter
 brew "enca"
-# Modern replacement for 'ls'
-brew "exa"
+# Modern, maintained replacement for ls
+brew "eza"
 # Collection of GNU find, xargs, and locate
 brew "findutils"
 # Command-line fuzzy finder written in Go
@@ -37,8 +45,6 @@ brew "fzf"
 brew "gawk"
 # GitHub command-line tool
 brew "gh"
-# Distributed revision control system
-brew "git"
 # Syntax-highlighting pager for git and diff output
 brew "git-delta"
 # Command-line option parsing utility
@@ -57,32 +63,60 @@ brew "gnupg"
 brew "go"
 # GNU grep, egrep and fgrep
 brew "grep"
+# Modern, extensible Python project management
+brew "hatch"
 # Bash and zsh history suggest box
 brew "hstr"
 # Improved top (interactive process viewer)
 brew "htop"
+# C/C++ and Java libraries for Unicode and globalization
+brew "icu4c@76"
 # Display an interface's bandwidth usage
 brew "iftop"
 # Utility for IPMI control with kernel driver or LAN interface
 brew "ipmitool"
+# Manage your Java environment
+brew "jenv"
 # Lightweight and flexible command-line JSON processor
 brew "jq"
 # Modern load testing tool, using Go and JavaScript
 brew "k6"
+# Generic command-line non-JVM Apache Kafka producer and consumer
+brew "kcat"
+# Build tool for Clojure
+brew "leiningen"
 # Utility for directing compilation
 brew "make"
-# Platform built on V8 to build network applications
+# Java-based project management
+brew "maven"
+# General-purpose lossless data-compression library
+brew "zlib"
+# Open source relational database management system
+brew "mysql-client"
+# Utility for managing network connections
+brew "netcat"
+# Open-source, cross-platform JavaScript runtime environment
 brew "node"
 # Manage multiple Node.js versions
 brew "nvm"
+# Development kit for the Java programming language
+brew "openjdk@11"
+# Development kit for the Java programming language
+brew "openjdk@21", link: true
 # Simplistic interactive filtering tool
 brew "peco"
 # Python package management tool
 brew "poetry"
+# Protocol buffers (Google's data interchange format)
+brew "protobuf@29"
 # Parallel versions of OpenSSH and related tools
 brew "pssh"
 # Python version management
 brew "pyenv"
+# Ruby version manager
+brew "rbenv"
+# Rsync for cloud storage
+brew "rclone"
 # Build tool for Scala projects
 brew "sbt"
 # JVM-based programming language
@@ -107,12 +141,12 @@ brew "wget"
 brew "yq"
 # Tracks most-used directories to make cd smarter
 brew "z"
-# General-purpose lossless data-compression library
-brew "zlib"
 # Fish shell like syntax highlighting for zsh
 brew "zsh-syntax-highlighting"
-# App to build and share containerized applications and microservices
-cask "docker"
+# Command-line interface for 1Password
+cask "1password-cli"
+# App to build and share containerised applications and microservices
+cask "docker-desktop"
 # Desktop client for GitHub repositories
 cask "github"
 # Go (golang) IDE
@@ -131,5 +165,60 @@ cask "rectangle"
 cask "spotify"
 # JDK from the Eclipse Foundation (Adoptium)
 cask "temurin"
+# JDK from the Eclipse Foundation (Adoptium)
+cask "temurin@8"
 # Open-source code editor
 cask "visual-studio-code"
+# Network protocol analyzer
+cask "wireshark-app"
+vscode "adpyke.vscode-sql-formatter"
+vscode "ashishalex.dataform-lsp-vscode"
+vscode "betterthantomorrow.calva"
+vscode "betterthantomorrow.calva-spritz"
+vscode "charliermarsh.ruff"
+vscode "eamodio.gitlens"
+vscode "foxundermoon.shell-format"
+vscode "github.copilot"
+vscode "github.copilot-chat"
+vscode "github.vscode-pull-request-github"
+vscode "golang.go"
+vscode "hashicorp.terraform"
+vscode "hogashi.vscode-copy-github-permalink"
+vscode "milovidov.escape-quotes"
+vscode "ms-python.debugpy"
+vscode "ms-python.python"
+vscode "ms-python.vscode-pylance"
+vscode "ms-python.vscode-python-envs"
+vscode "ms-vscode-remote.remote-containers"
+vscode "ms-vscode-remote.remote-ssh"
+vscode "ms-vscode-remote.remote-ssh-edit"
+vscode "ms-vscode-remote.remote-wsl"
+vscode "ms-vscode-remote.vscode-remote-extensionpack"
+vscode "ms-vscode.makefile-tools"
+vscode "ms-vscode.remote-explorer"
+vscode "ms-vscode.remote-server"
+vscode "msyrus.go-doc"
+vscode "redhat.java"
+vscode "redhat.vscode-xml"
+vscode "redhat.vscode-yaml"
+vscode "scala-lang.scala"
+vscode "scalameta.metals"
+vscode "shd101wyy.markdown-preview-enhanced"
+vscode "shopify.ruby-lsp"
+vscode "timonwong.shellcheck"
+vscode "usernamehw.errorlens"
+vscode "visualstudioexptteam.intellicode-api-usage-examples"
+vscode "visualstudioexptteam.vscodeintellicode"
+vscode "vscjava.migrate-java-to-azure"
+vscode "vscjava.vscode-gradle"
+vscode "vscjava.vscode-java-debug"
+vscode "vscjava.vscode-java-dependency"
+vscode "vscjava.vscode-java-pack"
+vscode "vscjava.vscode-java-test"
+vscode "vscjava.vscode-java-upgrade"
+vscode "vscjava.vscode-maven"
+vscode "yzhang.markdown-all-in-one"
+go "github.com/rogpeppe/godef"
+go "golang.org/x/tools/gopls"
+go "google.golang.org/protobuf/cmd/protoc-gen-go"
+go "honnef.co/go/tools/cmd/staticcheck"

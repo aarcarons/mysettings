@@ -1,8 +1,8 @@
 # This script is sourced from .zshrc
 
-alias ls="exa"
-alias ll="exa --all --long --header --group-directories-first --sort=modified --reverse"
+alias ls="eza"
+alias ll="eza --all --long --header --group-directories-first --sort=modified --reverse"
 alias g=git
 
 # google cloud platform
-alias gcurl='curl --header "Authorization: Bearer $(gcloud auth print-access-token)"'
+alias gcurl='curl --header "Authorization: Bearer $(gcloud auth print-identity-token)"'
