@@ -43,8 +43,6 @@ brew "gawk"
 brew "git-delta"
 # Command-line option parsing utility
 brew "gnu-getopt"
-# C code prettifier
-brew "gnu-indent"
 # GNU implementation of the famous stream editor
 brew "gnu-sed"
 # GNU version of the tar archiving utility
@@ -174,7 +172,6 @@ vscode "vscjava.migrate-java-to-azure"
 vscode "vscjava.vscode-java-pack"
 vscode "vscjava.vscode-java-upgrade"
 vscode "yzhang.markdown-all-in-one"
-go "github.com/rogpeppe/godef"
 go "golang.org/x/tools/gopls"
 go "google.golang.org/protobuf/cmd/protoc-gen-go"
 go "honnef.co/go/tools/cmd/staticcheck"
