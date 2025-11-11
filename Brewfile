@@ -1,4 +1,3 @@
-tap "homebrew/bundle"
 # Distributed revision control system
 brew "git"
 # Extendable version manager with support for Ruby, Node.js, Erlang & more
@@ -25,8 +24,6 @@ brew "zstd"
 brew "curl"
 # Tool for exploring each layer in a docker image
 brew "dive"
-# Command-line DNS client
-brew "dog"
 # More intuitive version of du in rust
 brew "dust"
 # Charset analyzer and converter
