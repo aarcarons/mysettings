@@ -1,6 +1,4 @@
-tap "clojure/tools"
 tap "homebrew/bundle"
-tap "homebrew/cask-versions"
 # Distributed revision control system
 brew "git"
 # Extendable version manager with support for Ruby, Node.js, Erlang & more
@@ -43,8 +41,6 @@ brew "findutils"
 brew "fzf"
 # GNU awk utility
 brew "gawk"
-# GitHub command-line tool
-brew "gh"
 # Syntax-highlighting pager for git and diff output
 brew "git-delta"
 # Command-line option parsing utility
@@ -69,14 +65,8 @@ brew "hatch"
 brew "hstr"
 # Improved top (interactive process viewer)
 brew "htop"
-# C/C++ and Java libraries for Unicode and globalization
-brew "icu4c@76"
 # Display an interface's bandwidth usage
 brew "iftop"
-# Utility for IPMI control with kernel driver or LAN interface
-brew "ipmitool"
-# Manage your Java environment
-brew "jenv"
 # Lightweight and flexible command-line JSON processor
 brew "jq"
 # Modern load testing tool, using Go and JavaScript
@@ -95,26 +85,12 @@ brew "zlib"
 brew "mysql-client"
 # Utility for managing network connections
 brew "netcat"
-# Open-source, cross-platform JavaScript runtime environment
-brew "node"
-# Manage multiple Node.js versions
-brew "nvm"
-# Development kit for the Java programming language
-brew "openjdk@11"
-# Development kit for the Java programming language
-brew "openjdk@21", link: true
 # Simplistic interactive filtering tool
 brew "peco"
 # Python package management tool
 brew "poetry"
 # Protocol buffers (Google's data interchange format)
 brew "protobuf@29"
-# Parallel versions of OpenSSH and related tools
-brew "pssh"
-# Python version management
-brew "pyenv"
-# Ruby version manager
-brew "rbenv"
 # Rsync for cloud storage
 brew "rclone"
 # Build tool for Scala projects
@@ -125,8 +101,6 @@ brew "scala"
 brew "shellcheck"
 # Tool Command Language
 brew "tcl-tk"
-# Terraform version manager inspired by rbenv
-brew "tfenv"
 # Code-search similar to ack
 brew "the_silver_searcher"
 # Simplified and community-driven man pages
@@ -163,14 +137,8 @@ cask "pycharm-ce"
 cask "rectangle"
 # Music streaming service
 cask "spotify"
-# JDK from the Eclipse Foundation (Adoptium)
-cask "temurin"
-# JDK from the Eclipse Foundation (Adoptium)
-cask "temurin@8"
 # Open-source code editor
 cask "visual-studio-code"
-# Network protocol analyzer
-cask "wireshark-app"
 vscode "adpyke.vscode-sql-formatter"
 vscode "ashishalex.dataform-lsp-vscode"
 vscode "betterthantomorrow.calva"
@@ -189,16 +157,12 @@ vscode "ms-python.debugpy"
 vscode "ms-python.python"
 vscode "ms-python.vscode-pylance"
 vscode "ms-python.vscode-python-envs"
-vscode "ms-vscode-remote.remote-containers"
-vscode "ms-vscode-remote.remote-ssh"
-vscode "ms-vscode-remote.remote-ssh-edit"
 vscode "ms-vscode-remote.remote-wsl"
 vscode "ms-vscode-remote.vscode-remote-extensionpack"
 vscode "ms-vscode.makefile-tools"
 vscode "ms-vscode.remote-explorer"
 vscode "ms-vscode.remote-server"
 vscode "msyrus.go-doc"
-vscode "redhat.java"
 vscode "redhat.vscode-xml"
 vscode "redhat.vscode-yaml"
 vscode "scala-lang.scala"
@@ -210,13 +174,7 @@ vscode "usernamehw.errorlens"
 vscode "visualstudioexptteam.intellicode-api-usage-examples"
 vscode "visualstudioexptteam.vscodeintellicode"
 vscode "vscjava.migrate-java-to-azure"
-vscode "vscjava.vscode-gradle"
-vscode "vscjava.vscode-java-debug"
-vscode "vscjava.vscode-java-dependency"
 vscode "vscjava.vscode-java-pack"
-vscode "vscjava.vscode-java-test"
-vscode "vscjava.vscode-java-upgrade"
-vscode "vscjava.vscode-maven"
 vscode "yzhang.markdown-all-in-one"
 go "github.com/rogpeppe/godef"
 go "golang.org/x/tools/gopls"
