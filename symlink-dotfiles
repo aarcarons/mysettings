@@ -9,7 +9,6 @@ DOT_FILE_NAMES=(
     ".gitconfig"
     ".gitignore_global"
     ".zshrc"
-    ".zshrc.local"
     ".zshrc_aliases"
     "Brewfile"
     ".git_aliases"
@@ -36,19 +35,5 @@ link_dotfiles() {
     done
 }
 
-unlink_dotfiles() {
-    for filename in "${DOT_FILE_NAMES[@]}"; do
-        dotfile="$HOME/$filename"
-        rm -f -v "$dotfile"
-    done
-}
-
-update_links() {
-    echo "Removing symlinks..."
-    unlink_dotfiles
-
-    echo "Creating symlinks..."
-    link_dotfiles
-}
-
-update_links
+echo "Creating symlinks..."
+link_dotfiles

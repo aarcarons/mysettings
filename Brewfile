@@ -2,6 +2,8 @@
 brew "git"
 # Extendable version manager with support for Ruby, Node.js, Erlang & more
 brew "asdf"
+# Improved shell history for zsh, bash, fish and nushell
+brew "atuin"
 # General-purpose data compression with high compression ratio
 brew "xz"
 # Cryptography and SSL/TLS Toolkit
@@ -10,16 +12,18 @@ brew "openssl@3"
 brew "awscli"
 # Bourne-Again SHell, a UNIX command interpreter
 brew "bash"
+# Clone of cat(1) with syntax highlighting and Git integration
+brew "bat"
 # Statistics utility to count lines of code
 brew "cloc"
 # Cross-platform make
 brew "cmake"
+# Zstandard is a real-time compression algorithm
+brew "zstd"
 # Defines a standard way of committing rules and communicating it
 brew "commitizen"
 # GNU File, Shell, and Text utilities
 brew "coreutils"
-# Zstandard is a real-time compression algorithm
-brew "zstd"
 # Get a file from an HTTP, HTTPS or FTP server
 brew "curl"
 # Tool for exploring each layer in a docker image
@@ -30,6 +34,8 @@ brew "dust"
 brew "enca"
 # Modern, maintained replacement for ls
 brew "eza"
+# Simple, fast and user-friendly alternative to find
+brew "fd"
 # Collection of GNU find, xargs, and locate
 brew "findutils"
 # Command-line fuzzy finder written in Go
