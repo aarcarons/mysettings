@@ -4,7 +4,7 @@
 - Clone this repo
 - Apply macOS settings (run settings/defaults script)
 - Install brew
-- Install packages from brewfile
+- Install packages from brewfile (`brew bundle`)
 - Install oh-my-zsh
    - Install alias-tips: https://github.com/djui/alias-tips
 - Symlink files via symlink-dotfiles script
