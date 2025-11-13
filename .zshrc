@@ -10,6 +10,13 @@ source $ZSH/oh-my-zsh.sh
 export UPDATE_ZSH_DAYS=14
 export DISABLE_UPDATE_PROMPT=true # accept updates by default
 
+[ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
+export FZF_DEFAULT_COMMAND='fd --type f --hidden --follow --exclude .git'
+export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
+export FZF_ALT_C_COMMAND='fd --type d --hidden --follow --exclude .git'
+export FZF_DEFAULT_OPTS='--height 40% --layout=reverse --border --info=inline --preview "bat --style=numbers --color=always --line-range :500 {} 2>/dev/null" --preview-window=right:60% --bind "ctrl-j:down,ctrl-k:up,ctrl-d:half-page-down,ctrl-u:half-page-up,ctrl-l:toggle-preview"'
+
+
 # Load local settings
 _ZSH_LOCAL_SETTING="$HOME/.zshrc.local"
 if [ -f $_ZSH_LOCAL_SETTING ]; then
@@ -21,23 +28,10 @@ export PYENV_ROOT="$HOME/.pyenv"
 [[ -d $PYENV_ROOT/bin ]] && export PATH="$PYENV_ROOT/bin:$PATH"
 eval "$(pyenv init -)"
 
-
-# Shell history
-eval "$(hstr --show-configuration)"
-## This options are mutually exclusive: INC_APPEND_HISTORY, SHARE_HISTORY and INC_APPEND_HISTORY_TIME
-## Setting INC_APPEND_HISTORY_TIME, which will cause the shell to append each command to the history after it completes
-## Local tab history (up key) will be kept local
-## hstr will read from the history file so it will show commands typed in all tabs
-## see https://askubuntu.com/questions/23630/how-do-you-share-history-between-terminals-in-zsh
-## https://github.com/dvorka/hstr/issues/400
-## https://github.com/ohmyzsh/ohmyzsh/issues/2537
-unsetopt INC_APPEND_HISTORY
-unsetopt SHARE_HISTORY
-setopt INC_APPEND_HISTORY_TIME
-
-
 # PATH exports
 PATH="$HOME/source/mysettings/scripts:$PATH"
+PATH="$HOME/.local/bin:$PATH"
+
 ##  Override mac tools with GNU versions (installed via brew)
 if command -v brew >/dev/null 2>&1; then
     BREW_PREFIX=$(brew --prefix)
@@ -64,8 +58,15 @@ fi
 
 source ~/.zshrc_aliases
 
-# https://github.com/zsh-users/zsh-syntax-highlighting#why-must-zsh-syntax-highlightingzsh-be-sourced-at-the-end-of-the-zshrc-file
-source "$BREW_PREFIX/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
 source "$BREW_PREFIX/opt/asdf/libexec/asdf.sh"
+
 # 1password
 export SSH_AUTH_SOCK=~/Library/Group\ Containers/2BUA8C4S2C.com.1password/t/agent.sock
+
+test -e "${HOME}/.iterm2_shell_integration.zsh" && source "${HOME}/.iterm2_shell_integration.zsh"
+
+# Atuin (history/search)
+eval "$(atuin init zsh)"
+
+# https://github.com/zsh-users/zsh-syntax-highlighting#why-must-zsh-syntax-highlightingzsh-be-sourced-at-the-end-of-the-zshrc-file
+source "$BREW_PREFIX/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
