@@ -1,11 +1,13 @@
+# General-purpose data compression with high compression ratio
+brew "xz"
+# Zstandard is a real-time compression algorithm
+brew "zstd"
 # Distributed revision control system
 brew "git"
 # Extendable version manager with support for Ruby, Node.js, Erlang & more
 brew "asdf"
 # Improved shell history for zsh, bash, fish and nushell
 brew "atuin"
-# General-purpose data compression with high compression ratio
-brew "xz"
 # Cryptography and SSL/TLS Toolkit
 brew "openssl@3"
 # Official Amazon AWS command-line interface
@@ -18,8 +20,6 @@ brew "bat"
 brew "cloc"
 # Cross-platform make
 brew "cmake"
-# Zstandard is a real-time compression algorithm
-brew "zstd"
 # Defines a standard way of committing rules and communicating it
 brew "commitizen"
 # GNU File, Shell, and Text utilities
@@ -36,6 +36,10 @@ brew "enca"
 brew "eza"
 # Simple, fast and user-friendly alternative to find
 brew "fd"
+# GNU Transport Layer Security (TLS) Library
+brew "gnutls"
+# Play, record, convert, and stream audio and video
+brew "ffmpeg"
 # Collection of GNU find, xargs, and locate
 brew "findutils"
 # Command-line fuzzy finder written in Go
@@ -50,8 +54,6 @@ brew "gnu-getopt"
 brew "gnu-sed"
 # GNU version of the tar archiving utility
 brew "gnu-tar"
-# GNU Transport Layer Security (TLS) Library
-brew "gnutls"
 # GNU Pretty Good Privacy (PGP) package
 brew "gnupg"
 # Open source programming language to build simple/reliable/efficient software
@@ -66,6 +68,8 @@ brew "hstr"
 brew "htop"
 # Display an interface's bandwidth usage
 brew "iftop"
+# Update of iperf: measures TCP, UDP, and SCTP bandwidth
+brew "iperf3"
 # Lightweight and flexible command-line JSON processor
 brew "jq"
 # Modern load testing tool, using Go and JavaScript
@@ -102,6 +106,8 @@ brew "sbt"
 brew "scala"
 # Static analysis and lint tool, for (ba)sh scripts
 brew "shellcheck"
+# Cross-shell prompt for astronauts
+brew "starship"
 # Tool Command Language
 brew "tcl-tk"
 # Simplified and community-driven man pages
@@ -114,12 +120,15 @@ brew "watch"
 brew "wget"
 # Process YAML, JSON, XML, CSV and properties documents from the CLI
 brew "yq"
+# Fish-like fast/unobtrusive autosuggestions for zsh
+brew "zsh-autosuggestions"
 # Fish shell like syntax highlighting for zsh
 brew "zsh-syntax-highlighting"
 # Command-line interface for 1Password
 cask "1password-cli"
 # App to build and share containerised applications and microservices
 cask "docker-desktop"
+cask "font-fira-code"
 # Desktop client for GitHub repositories
 cask "github"
 # Go (golang) IDE
@@ -156,11 +165,16 @@ vscode "ms-python.debugpy"
 vscode "ms-python.python"
 vscode "ms-python.vscode-pylance"
 vscode "ms-python.vscode-python-envs"
+vscode "ms-vscode-remote.remote-containers"
+vscode "ms-vscode-remote.remote-ssh"
+vscode "ms-vscode-remote.remote-ssh-edit"
 vscode "ms-vscode-remote.remote-wsl"
 vscode "ms-vscode-remote.vscode-remote-extensionpack"
 vscode "ms-vscode.makefile-tools"
+vscode "ms-vscode.remote-explorer"
 vscode "ms-vscode.remote-server"
 vscode "msyrus.go-doc"
+vscode "redhat.java"
 vscode "redhat.vscode-xml"
 vscode "redhat.vscode-yaml"
 vscode "scala-lang.scala"
@@ -172,8 +186,13 @@ vscode "usernamehw.errorlens"
 vscode "visualstudioexptteam.intellicode-api-usage-examples"
 vscode "visualstudioexptteam.vscodeintellicode"
 vscode "vscjava.migrate-java-to-azure"
+vscode "vscjava.vscode-gradle"
+vscode "vscjava.vscode-java-debug"
+vscode "vscjava.vscode-java-dependency"
 vscode "vscjava.vscode-java-pack"
+vscode "vscjava.vscode-java-test"
 vscode "vscjava.vscode-java-upgrade"
+vscode "vscjava.vscode-maven"
 vscode "yzhang.markdown-all-in-one"
 go "golang.org/x/tools/gopls"
 go "google.golang.org/protobuf/cmd/protoc-gen-go"
