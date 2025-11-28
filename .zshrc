@@ -2,13 +2,7 @@ export LANG=en_US.UTF-8
 export TERM=xterm-256color
 export EDITOR='code --wait --new-window'
 
-# omz
-export ZSH=$HOME/.oh-my-zsh
-ZSH_THEME="robbyrussell"
-plugins=(git alias-tips)
-source $ZSH/oh-my-zsh.sh
-export UPDATE_ZSH_DAYS=14
-export DISABLE_UPDATE_PROMPT=true # accept updates by default
+eval "$(starship init zsh)"
 
 [ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
 export FZF_DEFAULT_COMMAND='fd --type f --hidden --follow --exclude .git'
@@ -68,5 +62,6 @@ test -e "${HOME}/.iterm2_shell_integration.zsh" && source "${HOME}/.iterm2_shell
 # Atuin (history/search)
 eval "$(atuin init zsh)"
 
+source "$BREW_PREFIX/share/zsh-autosuggestions/zsh-autosuggestions.zsh"
 # https://github.com/zsh-users/zsh-syntax-highlighting#why-must-zsh-syntax-highlightingzsh-be-sourced-at-the-end-of-the-zshrc-file
 source "$BREW_PREFIX/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
