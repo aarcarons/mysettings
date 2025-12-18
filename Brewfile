@@ -2,6 +2,8 @@
 brew "xz"
 # Zstandard is a real-time compression algorithm
 brew "zstd"
+# ARP scanning and fingerprinting tool
+brew "arp-scan"
 # Distributed revision control system
 brew "git"
 # Extendable version manager with support for Ruby, Node.js, Erlang & more
@@ -54,7 +56,7 @@ brew "gnu-getopt"
 brew "gnu-sed"
 # GNU version of the tar archiving utility
 brew "gnu-tar"
-# GNU Pretty Good Privacy (PGP) package
+# GNU Privacy Guard (OpenPGP)
 brew "gnupg"
 # Open source programming language to build simple/reliable/efficient software
 brew "go"
@@ -88,6 +90,8 @@ brew "zlib"
 brew "mysql-client"
 # Utility for managing network connections
 brew "netcat"
+# Port scanning utility for large networks
+brew "nmap"
 # Simplistic interactive filtering tool
 brew "peco"
 # Python package management tool
@@ -108,6 +112,8 @@ brew "scala"
 brew "shellcheck"
 # Cross-shell prompt for astronauts
 brew "starship"
+# Subdomain discovery tool
+brew "subfinder"
 # Tool Command Language
 brew "tcl-tk"
 # Simplified and community-driven man pages
@@ -126,6 +132,8 @@ brew "zsh-autosuggestions"
 brew "zsh-syntax-highlighting"
 # Command-line interface for 1Password
 cask "1password-cli"
+# OpenAI's coding agent that runs in your terminal
+cask "codex"
 # App to build and share containerised applications and microservices
 cask "docker-desktop"
 cask "font-fira-code"
@@ -153,6 +161,7 @@ vscode "betterthantomorrow.calva"
 vscode "betterthantomorrow.calva-spritz"
 vscode "charliermarsh.ruff"
 vscode "eamodio.gitlens"
+vscode "editorconfig.editorconfig"
 vscode "foxundermoon.shell-format"
 vscode "github.copilot"
 vscode "github.copilot-chat"
@@ -183,8 +192,6 @@ vscode "shd101wyy.markdown-preview-enhanced"
 vscode "shopify.ruby-lsp"
 vscode "timonwong.shellcheck"
 vscode "usernamehw.errorlens"
-vscode "visualstudioexptteam.intellicode-api-usage-examples"
-vscode "visualstudioexptteam.vscodeintellicode"
 vscode "vscjava.migrate-java-to-azure"
 vscode "vscjava.vscode-gradle"
 vscode "vscjava.vscode-java-debug"
