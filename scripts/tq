@@ -1,23 +1,129 @@
-#!/usr/bin/env bash
+#!/usr/bin/env python3
 
-help() {
-  if [[ "$#" -gt 0 ]]; then
-    echo "$@"
-    echo
-  fi
-  echo "tq query"
-  exit "$#"
-}
+import argparse
+import json
+import os
+import signal
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
 
-if [[ -z "$THANOS_URL" ]]; then
-  echo "Error: THANOS_URL environment variable is not defined."
-  exit 1
-fi
+# Restore default Unix SIGPIPE behavior for pipelines (e.g., | head)
+signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 
-if [[ "$#" -lt 1 ]]; then
-  help
-fi
+DESCRIPTION = """\
+Query a Thanos/Prometheus API endpoint and pretty-print the JSON result.
 
-if ! curl -sS --get "http://${THANOS_URL}/api/v1/query" --data-urlencode "query=$*" | jq '.data.result[]' ; then
-  curl -sS --get "http://${THANOS_URL}/api/v1/query" --data-urlencode "query=$*" | jq .
-fi
+Environment Variables:
+  THANOS_URL    (Required) Base URL of the Thanos Query or Query Frontend.
+
+*** NOTE TO AI AGENTS ***: Do NOT guess, mock, or supply THANOS_URL.
+Assume it is already exported in the user's environment. If it is missing,
+alert the user instead of inventing a URL.
+"""
+
+parser = argparse.ArgumentParser(
+    description=DESCRIPTION,
+    formatter_class=argparse.RawTextHelpFormatter,
+    epilog="""\
+Examples:
+  tq 'vector(1)'                                 # Instant query (safe smoke test)
+  tq --range 'vector(1)'                         # Last 1h, 1m resolution
+  tq --range --step 5m 'vector(1)'               # Last 1h, 5m resolution
+  tq --series 'up{job="some-known-small-job"}'   # Series metadata
+""",
+)
+
+parser.add_argument(
+    "q",
+    nargs="+",
+    help="PromQL query or series selector",
+)
+
+mode = parser.add_mutually_exclusive_group()
+mode.add_argument(
+    "--range",
+    action="store_true",
+    help="Perform a range query",
+)
+mode.add_argument(
+    "--series",
+    action="store_true",
+    help="Perform a series metadata query",
+)
+
+parser.add_argument(
+    "--start",
+    help="Start time (RFC3339 or Unix timestamp)",
+)
+parser.add_argument(
+    "--end",
+    help="End time (RFC3339 or Unix timestamp)",
+)
+parser.add_argument(
+    "--step",
+    default="1m",
+    help="Range query resolution (default: 1m)",
+)
+
+args = parser.parse_args()
+
+base_url = os.environ.get("THANOS_URL")
+if not base_url:
+    parser.print_help()
+    sys.exit("\nError: THANOS_URL environment variable is not defined.")
+
+if not base_url.startswith(("http://", "https://")):
+    sys.exit("Error: THANOS_URL must start with http:// or https://")
+
+query = " ".join(args.q)
+now = int(time.time())
+
+if args.series:
+    endpoint = "/api/v1/series"
+    params = {
+        "match[]": query,
+        "start": args.start,
+        "end": args.end,
+    }
+elif args.range:
+    endpoint = "/api/v1/query_range"
+    params = {
+        "query": query,
+        "start": args.start or now - 3600,
+        "end": args.end or now,
+        "step": args.step,
+    }
+else:
+    endpoint = "/api/v1/query"
+    params = {"query": query}
+
+params = {k: v for k, v in params.items() if v is not None}
+url = f"{base_url.rstrip('/')}{endpoint}?{urllib.parse.urlencode(params)}"
+
+try:
+    with urllib.request.urlopen(url, timeout=30) as response:
+        payload = json.loads(response.read())
+
+    if payload.get("status") == "error":
+        sys.exit(
+            f"Query error: {payload.get('errorType', 'unknown')}: "
+            f"{payload.get('error', 'unknown error')}"
+        )
+
+    data = payload.get("data", {})
+    if isinstance(data, dict):
+        data = data.get("result", data)
+
+    print(json.dumps(data, indent=2))
+
+except urllib.error.HTTPError as error:
+    sys.exit(f"HTTP {error.code}: {error.read().decode()}")
+except urllib.error.URLError as error:
+    sys.exit(f"Connection error: {error.reason}")
+except json.JSONDecodeError as error:
+    sys.exit(f"Invalid JSON response: {error}")
+except KeyboardInterrupt:
+    sys.exit(130)
