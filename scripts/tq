@@ -10,7 +10,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-# Restore default Unix SIGPIPE behavior for pipelines (e.g., | head)
+# Restore default Unix SIGPIPE behavior for pipelines (e.g. | head)
 signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 
 DESCRIPTION = """\
@@ -37,7 +37,7 @@ Examples:
 )
 
 parser.add_argument(
-    "q",
+    "query",
     nargs="+",
     help="PromQL query or series selector",
 )
@@ -68,17 +68,21 @@ parser.add_argument(
     help="Range query resolution (default: 1m)",
 )
 
+# Bare `tq` should show useful help rather than only a missing-argument error.
+if len(sys.argv) == 1:
+    parser.print_help()
+    sys.exit(2)
+
 args = parser.parse_args()
 
 base_url = os.environ.get("THANOS_URL")
 if not base_url:
-    parser.print_help()
-    sys.exit("\nError: THANOS_URL environment variable is not defined.")
+    parser.error("THANOS_URL environment variable is not defined")
 
 if not base_url.startswith(("http://", "https://")):
-    sys.exit("Error: THANOS_URL must start with http:// or https://")
+    parser.error("THANOS_URL must start with http:// or https://")
 
-query = " ".join(args.q)
+query = " ".join(args.query)
 now = int(time.time())
 
 if args.series:
