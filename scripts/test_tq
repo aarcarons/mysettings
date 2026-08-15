@@ -10,7 +10,10 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 # Global storage for mock server state tracking
+last_request_method = None
 last_request_path = None
+last_request_body = None
+last_request_content_type = None
 mock_response_payload = {}
 mock_response_status_code = 200
 
@@ -20,9 +23,17 @@ class MockThanosHandler(BaseHTTPRequestHandler):
         # Suppress logging to keep unittest output clean
         return
 
-    def do_GET(self):
-        global last_request_path, mock_response_payload, mock_response_status_code
+    def handle_request(self, method):
+        global last_request_method, last_request_path, last_request_body, last_request_content_type, mock_response_payload, mock_response_status_code
+        last_request_method = method
         last_request_path = self.path
+        last_request_content_type = self.headers.get("Content-Type")
+
+        if method == "POST":
+            content_length = int(self.headers.get("Content-Length", 0))
+            last_request_body = self.rfile.read(content_length).decode("utf-8")
+        else:
+            last_request_body = None
 
         self.send_response(mock_response_status_code)
         self.send_header("Content-Type", "application/json")
@@ -30,6 +41,12 @@ class MockThanosHandler(BaseHTTPRequestHandler):
 
         body = json.dumps(mock_response_payload).encode("utf-8")
         self.wfile.write(body)
+
+    def do_GET(self):
+        self.handle_request("GET")
+
+    def do_POST(self):
+        self.handle_request("POST")
 
 
 # Configure mock HTTP server on a dynamically assigned free TCP port
@@ -55,8 +72,11 @@ def run_tq(args, env_override=None):
 
 class TestTqCommandLine(unittest.TestCase):
     def setUp(self):
-        global last_request_path, mock_response_payload, mock_response_status_code
+        global last_request_method, last_request_path, last_request_body, last_request_content_type, mock_response_payload, mock_response_status_code
+        last_request_method = None
         last_request_path = None
+        last_request_body = None
+        last_request_content_type = None
         mock_response_payload = {"status": "success", "data": {}}
         mock_response_status_code = 200
 
@@ -171,9 +191,11 @@ class TestTqCommandLine(unittest.TestCase):
         # 5m = 300s duration
         res = run_tq(["--range", "--since", "5m", "up"])
         self.assertEqual(res.returncode, 0)
-        self.assertIsNotNone(last_request_path)
+        self.assertEqual(last_request_method, "POST")
+        self.assertEqual(last_request_path, "/api/v1/query_range")
+        self.assertEqual(last_request_content_type, "application/x-www-form-urlencoded")
 
-        qs = urllib.parse.parse_qs(urllib.parse.urlparse(last_request_path).query)
+        qs = urllib.parse.parse_qs(last_request_body)
         start = int(qs.get("start")[0])
         end = int(qs.get("end")[0])
         # end - start should equal exactly 300 seconds
@@ -188,9 +210,11 @@ class TestTqCommandLine(unittest.TestCase):
 
         res = run_tq(["--series", "--since", "5m", "up"])
         self.assertEqual(res.returncode, 0)
-        self.assertIsNotNone(last_request_path)
+        self.assertEqual(last_request_method, "POST")
+        self.assertEqual(last_request_path, "/api/v1/series")
+        self.assertEqual(last_request_content_type, "application/x-www-form-urlencoded")
 
-        qs = urllib.parse.parse_qs(urllib.parse.urlparse(last_request_path).query)
+        qs = urllib.parse.parse_qs(last_request_body)
         start = int(qs.get("start")[0])
         end = int(qs.get("end")[0])
         # end - start should equal exactly 300 seconds
@@ -207,11 +231,12 @@ class TestTqCommandLine(unittest.TestCase):
         }
         res = run_tq(["up"])
         self.assertEqual(res.returncode, 0)
-        self.assertIsNotNone(last_request_path)
-        self.assertTrue(last_request_path.startswith("/api/v1/query?"))
+        self.assertEqual(last_request_method, "POST")
+        self.assertEqual(last_request_path, "/api/v1/query")
+        self.assertEqual(last_request_content_type, "application/x-www-form-urlencoded")
 
-        # Check parameter
-        qs = urllib.parse.parse_qs(urllib.parse.urlparse(last_request_path).query)
+        # Check parameter in POST body
+        qs = urllib.parse.parse_qs(last_request_body)
         self.assertEqual(qs.get("query"), ["up"])
 
         # Check normalized response
@@ -224,7 +249,11 @@ class TestTqCommandLine(unittest.TestCase):
         mock_response_payload = {"status": "success", "data": {"resultType": "vector", "result": []}}
         res = run_tq(["--time", "1234567890", "up"])
         self.assertEqual(res.returncode, 0)
-        qs = urllib.parse.parse_qs(urllib.parse.urlparse(last_request_path).query)
+        self.assertEqual(last_request_method, "POST")
+        self.assertEqual(last_request_path, "/api/v1/query")
+        self.assertEqual(last_request_content_type, "application/x-www-form-urlencoded")
+
+        qs = urllib.parse.parse_qs(last_request_body)
         self.assertEqual(qs.get("time"), ["1234567890"])
 
     def test_routing_range_query(self):
@@ -238,10 +267,11 @@ class TestTqCommandLine(unittest.TestCase):
         }
         res = run_tq(["--range", "--step", "5m", "--start", "100", "--end", "200", "up"])
         self.assertEqual(res.returncode, 0)
-        self.assertIsNotNone(last_request_path)
-        self.assertTrue(last_request_path.startswith("/api/v1/query_range?"))
+        self.assertEqual(last_request_method, "POST")
+        self.assertEqual(last_request_path, "/api/v1/query_range")
+        self.assertEqual(last_request_content_type, "application/x-www-form-urlencoded")
 
-        qs = urllib.parse.parse_qs(urllib.parse.urlparse(last_request_path).query)
+        qs = urllib.parse.parse_qs(last_request_body)
         self.assertEqual(qs.get("query"), ["up"])
         self.assertEqual(qs.get("step"), ["5m"])
         self.assertEqual(qs.get("start"), ["100"])
@@ -255,10 +285,11 @@ class TestTqCommandLine(unittest.TestCase):
         }
         res = run_tq(["--series", "up"])
         self.assertEqual(res.returncode, 0)
-        self.assertIsNotNone(last_request_path)
-        self.assertTrue(last_request_path.startswith("/api/v1/series?"))
+        self.assertEqual(last_request_method, "POST")
+        self.assertEqual(last_request_path, "/api/v1/series")
+        self.assertEqual(last_request_content_type, "application/x-www-form-urlencoded")
 
-        qs = urllib.parse.parse_qs(urllib.parse.urlparse(last_request_path).query)
+        qs = urllib.parse.parse_qs(last_request_body)
         self.assertEqual(qs.get("match[]"), ["up"])
         # start and end must be absent if not supplied
         self.assertNotIn("start", qs)
@@ -276,10 +307,11 @@ class TestTqCommandLine(unittest.TestCase):
         }
         res = run_tq(["--labels", "--start", "100", "up"])
         self.assertEqual(res.returncode, 0)
-        self.assertIsNotNone(last_request_path)
-        self.assertTrue(last_request_path.startswith("/api/v1/labels?"))
+        self.assertEqual(last_request_method, "POST")
+        self.assertEqual(last_request_path, "/api/v1/labels")
+        self.assertEqual(last_request_content_type, "application/x-www-form-urlencoded")
 
-        qs = urllib.parse.parse_qs(urllib.parse.urlparse(last_request_path).query)
+        qs = urllib.parse.parse_qs(last_request_body)
         self.assertEqual(qs.get("match[]"), ["up"])
         self.assertEqual(qs.get("start"), ["100"])
         self.assertNotIn("end", qs)
@@ -297,8 +329,8 @@ class TestTqCommandLine(unittest.TestCase):
         # Verify URL encoding of the label name
         res = run_tq(["--label-values", "some/nested/label", "--end", "200", "up"])
         self.assertEqual(res.returncode, 0)
-        self.assertIsNotNone(last_request_path)
-        # Should call encoded path /api/v1/label/some%2Fnested%2Flabel/values
+        self.assertEqual(last_request_method, "GET")
+        # Should call encoded path as GET and keep params in URL query string
         self.assertTrue(last_request_path.startswith("/api/v1/label/some%2Fnested%2Flabel/values?"))
 
         qs = urllib.parse.parse_qs(urllib.parse.urlparse(last_request_path).query)
@@ -325,6 +357,7 @@ class TestTqCommandLine(unittest.TestCase):
         }
         res = run_tq(["--stores"])
         self.assertEqual(res.returncode, 0)
+        self.assertEqual(last_request_method, "GET")
         # Stores has NO query parameters or ? prefix
         self.assertEqual(last_request_path, "/api/v1/stores")
 
@@ -374,16 +407,19 @@ class TestTqCommandLine(unittest.TestCase):
 
         res1 = run_tq(["up"])
         self.assertEqual(res1.returncode, 0)
-        self.assertTrue(last_request_path.startswith("/api/v1/query?"))
+        self.assertEqual(last_request_method, "POST")
+        self.assertEqual(last_request_path, "/api/v1/query")
 
         res2 = run_tq(["--range", "up"])
         self.assertEqual(res2.returncode, 0)
-        self.assertTrue(last_request_path.startswith("/api/v1/query_range?"))
+        self.assertEqual(last_request_method, "POST")
+        self.assertEqual(last_request_path, "/api/v1/query_range")
 
         mock_response_payload = {"status": "success", "data": []}
         res3 = run_tq(["--series", "up"])
         self.assertEqual(res3.returncode, 0)
-        self.assertTrue(last_request_path.startswith("/api/v1/series?"))
+        self.assertEqual(last_request_method, "POST")
+        self.assertEqual(last_request_path, "/api/v1/series")
 
         res4 = run_tq(["--raw-response", "up"])
         self.assertEqual(res4.returncode, 0)
