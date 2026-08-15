@@ -63,9 +63,12 @@ parser = argparse.ArgumentParser(
     formatter_class=argparse.RawTextHelpFormatter,
     epilog="""\
 Output:
-  Instant       [{"metric": {...}, "value":  [<timestamp>, "<value>"]}, ...]
-  Range         [{"metric": {...}, "values": [[<timestamp>, "<value>"], ...]}, ...]
-  Series        [{"__name__": "...", "<label>": "..."}, ...]
+  Instant        [{"metric": {...}, "value": [...]}, ...]
+  Range          [{"metric": {...}, "values": [...]}, ...]
+  Series         [{"__name__": "...", "<label>": "..."}, ...]
+  Labels         ["__name__", "namespace", ...]
+  Label values   ["value-a", "value-b", ...]
+  Stores         <endpoint-specific object/array>
 
   Prometheus's response envelope is removed by default.
   Sample values are strings; timestamps are numbers.
@@ -73,15 +76,21 @@ Output:
 
 Examples:
   tq '<promql>'                                  # Instant query
-  tq --range '<promql>'                          # Last 1h, 1m resolution
-  tq --range --step 5m '<promql>'                # Last 1h, 5m resolution
-  tq --series '<series-selector>'                # Series metadata
+  tq --time TIME '<promql>'                      # Instant query at a specific time
+  tq --range '<promql>'                          # Range query
+  tq --range --step 5m '<promql>'                # Range query with step
+
+  tq --series '<selector>'                       # Series label sets
+  tq --labels '<selector>'                       # Distinct label names
+  tq --label-values LABEL '<selector>'           # Distinct values for one label
+
+  tq --stores                                    # Connected Thanos stores
 """,
 )
 
 parser.add_argument(
     "query",
-    nargs="+",
+    nargs="*",
     help="PromQL query or series selector",
 )
 
@@ -96,18 +105,37 @@ mode.add_argument(
     action="store_true",
     help="Perform a series metadata query",
 )
+mode.add_argument(
+    "--labels",
+    action="store_true",
+    help="Perform a label names query",
+)
+mode.add_argument(
+    "--label-values",
+    metavar="LABEL",
+    help="Perform a label values query for the specified label name",
+)
+mode.add_argument(
+    "--stores",
+    action="store_true",
+    help="Show connected Thanos stores",
+)
 
 parser.add_argument(
     "--start",
-    help="Start time (with --range or --series; RFC3339 or Unix timestamp)",
+    help="Start time (with --range, --series, --labels, or --label-values; RFC3339 or Unix timestamp)",
 )
 parser.add_argument(
     "--end",
-    help="End time (with --range or --series; RFC3339 or Unix timestamp)",
+    help="End time (with --range, --series, --labels, or --label-values; RFC3339 or Unix timestamp)",
 )
 parser.add_argument(
     "--step",
     help="Range query resolution (with --range; default: 1m)",
+)
+parser.add_argument(
+    "--time",
+    help="Evaluation time (for instant queries; RFC3339 or Unix timestamp)",
 )
 parser.add_argument(
     "--raw-response",
@@ -128,15 +156,31 @@ if len(sys.argv) == 1:
 
 args = parser.parse_args()
 
+has_label_values = args.label_values is not None
+query = " ".join(args.query).strip() if args.query else ""
+
 # Validate argument relationships
+if args.stores:
+    if args.query:
+        parser.error("--stores takes no query/selector expression")
+else:
+    if not query:
+        parser.error("the following arguments are required: query")
+
+if has_label_values and not args.label_values.strip():
+    parser.error("--label-values requires a non-empty label name")
+
 if args.step and not args.range:
     parser.error("--step requires --range")
 
-if args.start and not (args.range or args.series):
-    parser.error("--start requires --range or --series")
+if args.start and not (args.range or args.series or args.labels or has_label_values):
+    parser.error("--start requires --range, --series, --labels, or --label-values")
 
-if args.end and not (args.range or args.series):
-    parser.error("--end requires --range or --series")
+if args.end and not (args.range or args.series or args.labels or has_label_values):
+    parser.error("--end requires --range, --series, --labels, or --label-values")
+
+if args.time and (args.range or args.series or args.labels or has_label_values or args.stores):
+    parser.error("--time is only valid for instant queries")
 
 base_url = os.environ.get("THANOS_URL")
 if not base_url:
@@ -145,10 +189,27 @@ if not base_url:
 if not base_url.startswith(("http://", "https://")):
     parser.error("THANOS_URL must start with http:// or https://")
 
-query = " ".join(args.query)
 now = int(time.time())
 
-if args.series:
+if args.stores:
+    endpoint = "/api/v1/stores"
+    params = {}
+elif has_label_values:
+    label = urllib.parse.quote(args.label_values, safe="")
+    endpoint = f"/api/v1/label/{label}/values"
+    params = {
+        "match[]": query,
+        "start": args.start,
+        "end": args.end,
+    }
+elif args.labels:
+    endpoint = "/api/v1/labels"
+    params = {
+        "match[]": query,
+        "start": args.start,
+        "end": args.end,
+    }
+elif args.series:
     endpoint = "/api/v1/series"
     params = {
         "match[]": query,
@@ -165,10 +226,15 @@ elif args.range:
     }
 else:
     endpoint = "/api/v1/query"
-    params = {"query": query}
+    params = {
+        "query": query,
+        "time": args.time,
+    }
 
 params = {k: v for k, v in params.items() if v is not None}
-url = f"{base_url.rstrip('/')}{endpoint}?{urllib.parse.urlencode(params)}"
+url = f"{base_url.rstrip('/')}{endpoint}"
+if params:
+    url = f"{url}?{urllib.parse.urlencode(params)}"
 
 try:
     with urllib.request.urlopen(url, timeout=30) as response:
@@ -196,8 +262,9 @@ try:
             )
 
         data = payload.get("data", {})
-        if isinstance(data, dict):
-            data = data.get("result", data)
+        if not (args.series or args.labels or has_label_values or args.stores):
+            if isinstance(data, dict):
+                data = data.get("result", data)
 
         print(json.dumps(data, indent=2))
 

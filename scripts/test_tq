@@ -1,0 +1,322 @@
+#!/usr/bin/env python3
+
+import json
+import os
+import subprocess
+import sys
+import threading
+import unittest
+import urllib.parse
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+# Global storage for mock server state tracking
+last_request_path = None
+mock_response_payload = {}
+mock_response_status_code = 200
+
+
+class MockThanosHandler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        # Suppress logging to keep unittest output clean
+        return
+
+    def do_GET(self):
+        global last_request_path, mock_response_payload, mock_response_status_code
+        last_request_path = self.path
+
+        self.send_response(mock_response_status_code)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+
+        body = json.dumps(mock_response_payload).encode("utf-8")
+        self.wfile.write(body)
+
+
+# Configure mock HTTP server on a dynamically assigned free TCP port
+mock_server = HTTPServer(("localhost", 0), MockThanosHandler)
+MOCK_PORT = mock_server.server_port
+MOCK_THANOS_URL = f"http://localhost:{MOCK_PORT}"
+
+# Start serving in a background daemon thread
+t = threading.Thread(target=mock_server.serve_forever, daemon=True)
+t.start()
+
+
+def run_tq(args, env_override=None):
+    env = dict(os.environ)
+    env["THANOS_URL"] = MOCK_THANOS_URL
+    if env_override:
+        env.update(env_override)
+
+    cmd = [sys.executable, "scripts/tq"] + args
+    result = subprocess.run(cmd, env=env, capture_output=True, text=True)
+    return result
+
+
+class TestTqCommandLine(unittest.TestCase):
+    def setUp(self):
+        global last_request_path, mock_response_payload, mock_response_status_code
+        last_request_path = None
+        mock_response_payload = {"status": "success", "data": {}}
+        mock_response_status_code = 200
+
+    def test_validation_step_requires_range(self):
+        res = run_tq(["--step", "5m", "up"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("--step requires --range", res.stderr)
+
+    def test_validation_start_requires_valid_mode(self):
+        res = run_tq(["--start", "12345", "up"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("--start requires --range", res.stderr)
+
+    def test_validation_end_requires_valid_mode(self):
+        res = run_tq(["--end", "12345", "up"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("--end requires --range", res.stderr)
+
+    def test_validation_time_only_valid_on_instant_query(self):
+        res = run_tq(["--range", "--time", "123", "up"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("--time is only valid for instant queries", res.stderr)
+
+    def test_validation_labels_missing_selector(self):
+        res = run_tq(["--labels"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("the following arguments are required: query", res.stderr)
+
+    def test_validation_labels_empty_selector(self):
+        res = run_tq(["--labels", "   "])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("the following arguments are required: query", res.stderr)
+
+    def test_validation_label_values_missing_selector(self):
+        res = run_tq(["--label-values", "__name__"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("the following arguments are required: query", res.stderr)
+
+    def test_validation_label_values_empty_selector(self):
+        res = run_tq(["--label-values", "__name__", "  \t "])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("the following arguments are required: query", res.stderr)
+
+    def test_validation_label_values_missing_label(self):
+        res = run_tq(["--label-values"])
+        self.assertEqual(res.returncode, 2)
+        # Argparse error for expected one argument
+        self.assertIn("expected one argument", res.stderr)
+
+    def test_validation_label_values_empty_label(self):
+        res = run_tq(["--label-values", "", "up"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("--label-values requires a non-empty label name", res.stderr)
+
+    def test_validation_label_values_whitespace_label(self):
+        res = run_tq(["--label-values", "   ", "up"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("--label-values requires a non-empty label name", res.stderr)
+
+    def test_validation_stores_takes_no_query(self):
+        res1 = run_tq(["--stores", "some_unexpected_query"])
+        self.assertEqual(res1.returncode, 2)
+        self.assertIn("--stores takes no query/selector expression", res1.stderr)
+
+        res2 = run_tq(["--stores", "   "])
+        self.assertEqual(res2.returncode, 2)
+        self.assertIn("--stores takes no query/selector expression", res2.stderr)
+
+    def test_routing_instant_query(self):
+        global mock_response_payload
+        mock_response_payload = {
+            "status": "success",
+            "data": {
+                "resultType": "vector",
+                "result": [{"metric": {"__name__": "up"}, "value": [1234.56, "1"]}],
+            },
+        }
+        res = run_tq(["up"])
+        self.assertEqual(res.returncode, 0)
+        self.assertIsNotNone(last_request_path)
+        self.assertTrue(last_request_path.startswith("/api/v1/query?"))
+
+        # Check parameter
+        qs = urllib.parse.parse_qs(urllib.parse.urlparse(last_request_path).query)
+        self.assertEqual(qs.get("query"), ["up"])
+
+        # Check normalized response
+        data = json.loads(res.stdout)
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["metric"]["__name__"], "up")
+
+    def test_routing_instant_query_with_time(self):
+        global mock_response_payload
+        mock_response_payload = {"status": "success", "data": {"resultType": "vector", "result": []}}
+        res = run_tq(["--time", "1234567890", "up"])
+        self.assertEqual(res.returncode, 0)
+        qs = urllib.parse.parse_qs(urllib.parse.urlparse(last_request_path).query)
+        self.assertEqual(qs.get("time"), ["1234567890"])
+
+    def test_routing_range_query(self):
+        global mock_response_payload
+        mock_response_payload = {
+            "status": "success",
+            "data": {
+                "resultType": "matrix",
+                "result": [{"metric": {"__name__": "up"}, "values": [[1234.56, "1"]]}],
+            },
+        }
+        res = run_tq(["--range", "--step", "5m", "--start", "100", "--end", "200", "up"])
+        self.assertEqual(res.returncode, 0)
+        self.assertIsNotNone(last_request_path)
+        self.assertTrue(last_request_path.startswith("/api/v1/query_range?"))
+
+        qs = urllib.parse.parse_qs(urllib.parse.urlparse(last_request_path).query)
+        self.assertEqual(qs.get("query"), ["up"])
+        self.assertEqual(qs.get("step"), ["5m"])
+        self.assertEqual(qs.get("start"), ["100"])
+        self.assertEqual(qs.get("end"), ["200"])
+
+    def test_routing_series_query(self):
+        global mock_response_payload
+        mock_response_payload = {
+            "status": "success",
+            "data": [{"__name__": "up", "instance": "localhost"}],
+        }
+        res = run_tq(["--series", "up"])
+        self.assertEqual(res.returncode, 0)
+        self.assertIsNotNone(last_request_path)
+        self.assertTrue(last_request_path.startswith("/api/v1/series?"))
+
+        qs = urllib.parse.parse_qs(urllib.parse.urlparse(last_request_path).query)
+        self.assertEqual(qs.get("match[]"), ["up"])
+        # start and end must be absent if not supplied
+        self.assertNotIn("start", qs)
+        self.assertNotIn("end", qs)
+
+        # Check normalization (preserves complete data array)
+        data = json.loads(res.stdout)
+        self.assertEqual(data, [{"__name__": "up", "instance": "localhost"}])
+
+    def test_routing_labels_query(self):
+        global mock_response_payload
+        mock_response_payload = {
+            "status": "success",
+            "data": ["__name__", "instance", "job"],
+        }
+        res = run_tq(["--labels", "--start", "100", "up"])
+        self.assertEqual(res.returncode, 0)
+        self.assertIsNotNone(last_request_path)
+        self.assertTrue(last_request_path.startswith("/api/v1/labels?"))
+
+        qs = urllib.parse.parse_qs(urllib.parse.urlparse(last_request_path).query)
+        self.assertEqual(qs.get("match[]"), ["up"])
+        self.assertEqual(qs.get("start"), ["100"])
+        self.assertNotIn("end", qs)
+
+        # Check normalization (preserves complete data array)
+        data = json.loads(res.stdout)
+        self.assertEqual(data, ["__name__", "instance", "job"])
+
+    def test_routing_label_values_query(self):
+        global mock_response_payload
+        mock_response_payload = {
+            "status": "success",
+            "data": ["value-1", "value-2"],
+        }
+        # Verify URL encoding of the label name
+        res = run_tq(["--label-values", "some/nested/label", "--end", "200", "up"])
+        self.assertEqual(res.returncode, 0)
+        self.assertIsNotNone(last_request_path)
+        # Should call encoded path /api/v1/label/some%2Fnested%2Flabel/values
+        self.assertTrue(last_request_path.startswith("/api/v1/label/some%2Fnested%2Flabel/values?"))
+
+        qs = urllib.parse.parse_qs(urllib.parse.urlparse(last_request_path).query)
+        self.assertEqual(qs.get("match[]"), ["up"])
+        self.assertEqual(qs.get("end"), ["200"])
+        self.assertNotIn("start", qs)
+
+        # Check normalization
+        data = json.loads(res.stdout)
+        self.assertEqual(data, ["value-1", "value-2"])
+
+    def test_routing_stores_query(self):
+        global mock_response_payload
+        mock_response_payload = {
+            "status": "success",
+            "data": [
+                {
+                    "name": "store-1",
+                    "minTime": 100,
+                    "maxTime": 200,
+                    "type": "sidecar",
+                }
+            ],
+        }
+        res = run_tq(["--stores"])
+        self.assertEqual(res.returncode, 0)
+        # Stores has NO query parameters or ? prefix
+        self.assertEqual(last_request_path, "/api/v1/stores")
+
+        # Check normalization (stores preserves the complete data structure unchanged)
+        data = json.loads(res.stdout)
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["name"], "store-1")
+
+    def test_raw_response_handling(self):
+        global mock_response_payload
+        mock_response_payload = {
+            "status": "success",
+            "data": {"resultType": "vector", "result": [{"value": [1, "1"]}]},
+            "warnings": ["w1"],
+            "infos": ["i1"],
+        }
+        res = run_tq(["--raw-response", "up"])
+        self.assertEqual(res.returncode, 0)
+
+        # Raw response must contain the complete payload envelope
+        data = json.loads(res.stdout)
+        self.assertEqual(data["status"], "success")
+        self.assertIn("warnings", data)
+        self.assertIn("infos", data)
+
+        # Raw mode should not duplicate warnings/infos to stderr
+        self.assertNotIn("Warning: w1", res.stderr)
+        self.assertNotIn("Info: i1", res.stderr)
+
+    def test_normalized_warnings_and_infos(self):
+        global mock_response_payload
+        mock_response_payload = {
+            "status": "success",
+            "data": {"resultType": "vector", "result": []},
+            "warnings": ["warning_test"],
+            "infos": ["info_test"],
+        }
+        res = run_tq(["up"])
+        self.assertEqual(res.returncode, 0)
+        self.assertIn("Warning: warning_test", res.stderr)
+        self.assertIn("Info: info_test", res.stderr)
+
+    def test_legacy_form_compatibility(self):
+        # Explicitly verify legacy forms: tq '<promql>', tq --range '<promql>', tq --series '<selector>', tq --raw-response '<promql>'
+        global mock_response_payload
+        mock_response_payload = {"status": "success", "data": {"resultType": "vector", "result": []}}
+
+        res1 = run_tq(["up"])
+        self.assertEqual(res1.returncode, 0)
+        self.assertTrue(last_request_path.startswith("/api/v1/query?"))
+
+        res2 = run_tq(["--range", "up"])
+        self.assertEqual(res2.returncode, 0)
+        self.assertTrue(last_request_path.startswith("/api/v1/query_range?"))
+
+        mock_response_payload = {"status": "success", "data": []}
+        res3 = run_tq(["--series", "up"])
+        self.assertEqual(res3.returncode, 0)
+        self.assertTrue(last_request_path.startswith("/api/v1/series?"))
+
+        res4 = run_tq(["--raw-response", "up"])
+        self.assertEqual(res4.returncode, 0)
+
+
+if __name__ == "__main__":
+    unittest.main()
