@@ -125,6 +125,77 @@ class TestTqCommandLine(unittest.TestCase):
         self.assertEqual(res2.returncode, 2)
         self.assertIn("--stores takes no query/selector expression", res2.stderr)
 
+    def test_validation_since_invalid_duration(self):
+        res = run_tq(["--range", "--since", "30", "up"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("expected duration like 30s, 5m, 2h, 1d, or 1w", res.stderr)
+
+    def test_validation_since_fractional_duration(self):
+        res = run_tq(["--range", "--since", "0.5s", "up"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("expected duration like 30s, 5m, 2h, 1d, or 1w", res.stderr)
+
+    def test_validation_since_zero_duration(self):
+        res = run_tq(["--range", "--since", "0m", "up"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("duration must be greater than zero", res.stderr)
+
+    def test_validation_since_unsupported_unit(self):
+        res = run_tq(["--range", "--since", "5min", "up"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("expected duration like 30s, 5m, 2h, 1d, or 1w", res.stderr)
+
+    def test_validation_since_cannot_combine_with_start_or_end(self):
+        res1 = run_tq(["--range", "--since", "5m", "--start", "100", "up"])
+        self.assertEqual(res1.returncode, 2)
+        self.assertIn("--since cannot be combined with --start or --end", res1.stderr)
+
+        res2 = run_tq(["--range", "--since", "5m", "--end", "200", "up"])
+        self.assertEqual(res2.returncode, 2)
+        self.assertIn("--since cannot be combined with --start or --end", res2.stderr)
+
+    def test_validation_since_requires_valid_mode(self):
+        res = run_tq(["--since", "5m", "up"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("--since requires --range, --series, --labels, or --label-values", res.stderr)
+
+    def test_routing_range_query_with_since(self):
+        global mock_response_payload
+        mock_response_payload = {
+            "status": "success",
+            "data": {
+                "resultType": "matrix",
+                "result": [{"metric": {"__name__": "up"}, "values": [[1234.56, "1"]]}],
+            },
+        }
+        # 5m = 300s duration
+        res = run_tq(["--range", "--since", "5m", "up"])
+        self.assertEqual(res.returncode, 0)
+        self.assertIsNotNone(last_request_path)
+
+        qs = urllib.parse.parse_qs(urllib.parse.urlparse(last_request_path).query)
+        start = int(qs.get("start")[0])
+        end = int(qs.get("end")[0])
+        # end - start should equal exactly 300 seconds
+        self.assertEqual(end - start, 300)
+
+    def test_routing_series_query_with_since(self):
+        global mock_response_payload
+        mock_response_payload = {
+            "status": "success",
+            "data": [],
+        }
+
+        res = run_tq(["--series", "--since", "5m", "up"])
+        self.assertEqual(res.returncode, 0)
+        self.assertIsNotNone(last_request_path)
+
+        qs = urllib.parse.parse_qs(urllib.parse.urlparse(last_request_path).query)
+        start = int(qs.get("start")[0])
+        end = int(qs.get("end")[0])
+        # end - start should equal exactly 300 seconds
+        self.assertEqual(end - start, 300)
+
     def test_routing_instant_query(self):
         global mock_response_payload
         mock_response_payload = {
