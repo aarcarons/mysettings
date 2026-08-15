@@ -119,8 +119,8 @@ Examples:
   tq --series '<selector>'                       # Series label sets
   tq --labels                                    # All distinct label names
   tq --labels '<selector>'                       # Label names for matching series
-  tq --label-values LABEL                       # All values for a label
-  tq --label-values LABEL '<selector>'          # Values for matching series
+  tq --label-values LABEL                        # All values for a label
+  tq --label-values LABEL '<selector>'           # Values for matching series
 
   tq --stores                                    # Connected Thanos stores
 """,
