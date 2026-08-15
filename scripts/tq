@@ -14,20 +14,67 @@ import urllib.request
 signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 
 DESCRIPTION = """\
-Query a Thanos/Prometheus API endpoint and pretty-print the JSON result.
+Query a Thanos/Prometheus API endpoint and print JSON.
 
-Environment Variables:
+Environment:
   THANOS_URL    (Required) Base URL of the Thanos Query or Query Frontend.
 
-*** NOTE TO AI AGENTS ***: Do NOT guess, mock, or supply THANOS_URL.
-Assume it is already exported in the user's environment. If it is missing,
-alert the user instead of inventing a URL.
+*** NOTE TO AI AGENTS ***: Do NOT guess, mock, find, or supply THANOS_URL.
+AIs MUST ASSUME blindly that THANOS_URL is already provided and exported in the
+host/user environment.
 """
+
+HELP_OUTPUT_TEXT = r"""Detailed Output Format and Recipes for tq
+
+1. Response Normalization:
+   By default, tq strips the outer Prometheus envelope:
+   Raw:       {"status": "success", "data": {"resultType": "vector", "result": [...]}}
+   Normalized: [...] (the array of results directly)
+
+   This enables clean downstream piping into jq, e.g.:
+     tq 'up' | jq '.[].metric'
+
+2. Sample Values and Floating-Point Special Cases:
+   - Timestamps are Unix timestamps represented as JSON numbers.
+   - Prometheus encodes sample values as JSON strings. This also permits special
+     floating-point values such as "NaN", "+Inf", and "-Inf", which JSON numbers
+     cannot represent.
+   - If converting values in jq, use 'tonumber' for ordinary numeric values; special
+     values such as "NaN" and infinities require separate handling:
+     tq 'up' | jq '.[].value[1] | tonumber'
+
+3. Common jq Recipes:
+   - Extracting all metrics:
+     tq 'up' | jq '.[].metric'
+
+   - Inspecting range query values:
+     tq --range 'up' | jq '.[].values'
+
+   - Format instance/value pairs:
+     tq 'up' | jq -r '.[] | "\(.metric.instance): \(.value[1])"'
+"""
+
+
+class OutputHelpAction(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        sys.stdout.write(HELP_OUTPUT_TEXT)
+        parser.exit()
+
 
 parser = argparse.ArgumentParser(
     description=DESCRIPTION,
     formatter_class=argparse.RawTextHelpFormatter,
     epilog="""\
+Output:
+  Instant       [{"metric": {...}, "value":  [<timestamp>, "<value>"]}, ...]
+  Range         [{"metric": {...}, "values": [[<timestamp>, "<value>"], ...]}, ...]
+  Series        [{"__name__": "...", "<label>": "..."}, ...]
+
+  Prometheus's response envelope is removed by default.
+  Sample values are strings; timestamps are numbers.
+  Use --raw-response to print the complete API response.
+  Use --help-output for detailed output examples.
+
 Examples:
   tq 'vector(1)'                                 # Instant query (safe smoke test)
   tq --range 'vector(1)'                         # Last 1h, 1m resolution
@@ -56,16 +103,26 @@ mode.add_argument(
 
 parser.add_argument(
     "--start",
-    help="Start time (RFC3339 or Unix timestamp)",
+    help="Start time (with --range or --series; RFC3339 or Unix timestamp)",
 )
 parser.add_argument(
     "--end",
-    help="End time (RFC3339 or Unix timestamp)",
+    help="End time (with --range or --series; RFC3339 or Unix timestamp)",
 )
 parser.add_argument(
     "--step",
-    default="1m",
-    help="Range query resolution (default: 1m)",
+    help="Range query resolution (with --range; default: 1m)",
+)
+parser.add_argument(
+    "--raw-response",
+    action="store_true",
+    help="Print the complete Prometheus/Thanos API response envelope",
+)
+parser.add_argument(
+    "--help-output",
+    action=OutputHelpAction,
+    nargs=0,
+    help="Show detailed output examples, formats, and jq recipes",
 )
 
 # Bare `tq` should show useful help rather than only a missing-argument error.
@@ -74,6 +131,16 @@ if len(sys.argv) == 1:
     sys.exit(2)
 
 args = parser.parse_args()
+
+# Validate argument relationships
+if args.step and not args.range:
+    parser.error("--step requires --range")
+
+if args.start and not (args.range or args.series):
+    parser.error("--start requires --range or --series")
+
+if args.end and not (args.range or args.series):
+    parser.error("--end requires --range or --series")
 
 base_url = os.environ.get("THANOS_URL")
 if not base_url:
@@ -98,7 +165,7 @@ elif args.range:
         "query": query,
         "start": args.start or now - 3600,
         "end": args.end or now,
-        "step": args.step,
+        "step": args.step or "1m",
     }
 else:
     endpoint = "/api/v1/query"
@@ -111,20 +178,49 @@ try:
     with urllib.request.urlopen(url, timeout=30) as response:
         payload = json.loads(response.read())
 
-    if payload.get("status") == "error":
-        sys.exit(
-            f"Query error: {payload.get('errorType', 'unknown')}: "
-            f"{payload.get('error', 'unknown error')}"
-        )
+    # Diagnostics on stderr (only for normalized mode to prevent duplicate output)
+    if not args.raw_response:
+        for warning in payload.get("warnings", []):
+            print(f"Warning: {warning}", file=sys.stderr)
 
-    data = payload.get("data", {})
-    if isinstance(data, dict):
-        data = data.get("result", data)
+        for info in payload.get("infos", []):
+            print(f"Info: {info}", file=sys.stderr)
 
-    print(json.dumps(data, indent=2))
+    is_error = payload.get("status") == "error"
+
+    if args.raw_response:
+        print(json.dumps(payload, indent=2))
+        if is_error:
+            sys.exit(1)
+    else:
+        if is_error:
+            sys.exit(
+                f"Query error: {payload.get('errorType', 'unknown')}: "
+                f"{payload.get('error', 'unknown error')}"
+            )
+
+        data = payload.get("data", {})
+        if isinstance(data, dict):
+            data = data.get("result", data)
+
+        print(json.dumps(data, indent=2))
 
 except urllib.error.HTTPError as error:
-    sys.exit(f"HTTP {error.code}: {error.read().decode()}")
+    try:
+        body = error.read().decode()
+    except (OSError, UnicodeDecodeError):
+        body = ""
+
+    if args.raw_response:
+        try:
+            payload = json.loads(body)
+        except json.JSONDecodeError:
+            pass
+        else:
+            print(json.dumps(payload, indent=2))
+            sys.exit(1)
+
+    sys.exit(f"HTTP {error.code}: {body}")
 except urllib.error.URLError as error:
     sys.exit(f"Connection error: {error.reason}")
 except json.JSONDecodeError as error:
