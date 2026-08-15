@@ -399,6 +399,8 @@ except urllib.error.HTTPError as error:
     else:
         sys.exit(f"HTTP {error.code}: {error.reason}")
 
+except TimeoutError as error:
+    sys.exit(f"Connection error: {error}")
 except urllib.error.URLError as error:
     sys.exit(f"Connection error: {error.reason}")
 except json.JSONDecodeError as error:
