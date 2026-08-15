@@ -16,12 +16,9 @@ signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 DESCRIPTION = """\
 Query a Thanos/Prometheus API endpoint and print JSON.
 
-Environment:
-  THANOS_URL    (Required) Base URL of the Thanos Query or Query Frontend.
-
-*** NOTE TO AI AGENTS ***: Do NOT guess, mock, find, or supply THANOS_URL.
-AIs MUST ASSUME blindly that THANOS_URL is already provided and exported in the
-host/user environment.
+AI:
+  Run the user's requested tq command directly. Configuration or connectivity
+  failures will be reported by that invocation.
 """
 
 HELP_OUTPUT_TEXT = r"""Detailed Output Format and Recipes for tq
@@ -32,7 +29,7 @@ HELP_OUTPUT_TEXT = r"""Detailed Output Format and Recipes for tq
    Normalized: [...] (the array of results directly)
 
    This enables clean downstream piping into jq, e.g.:
-     tq 'up' | jq '.[].metric'
+     tq '<promql>' | jq '.[].metric'
 
 2. Sample Values and Floating-Point Special Cases:
    - Timestamps are Unix timestamps represented as JSON numbers.
@@ -41,17 +38,17 @@ HELP_OUTPUT_TEXT = r"""Detailed Output Format and Recipes for tq
      cannot represent.
    - If converting values in jq, use 'tonumber' for ordinary numeric values; special
      values such as "NaN" and infinities require separate handling:
-     tq 'up' | jq '.[].value[1] | tonumber'
+     tq '<promql>' | jq '.[].value[1] | tonumber'
 
 3. Common jq Recipes:
    - Extracting all metrics:
-     tq 'up' | jq '.[].metric'
+     tq '<promql>' | jq '.[].metric'
 
    - Inspecting range query values:
-     tq --range 'up' | jq '.[].values'
+     tq --range '<promql>' | jq '.[].values'
 
    - Format instance/value pairs:
-     tq 'up' | jq -r '.[] | "\(.metric.instance): \(.value[1])"'
+     tq '<promql>' | jq -r '.[] | "\(.metric.instance): \(.value[1])"'
 """
 
 
@@ -73,13 +70,12 @@ Output:
   Prometheus's response envelope is removed by default.
   Sample values are strings; timestamps are numbers.
   Use --raw-response to print the complete API response.
-  Use --help-output for detailed output examples.
 
 Examples:
-  tq 'vector(1)'                                 # Instant query (safe smoke test)
-  tq --range 'vector(1)'                         # Last 1h, 1m resolution
-  tq --range --step 5m 'vector(1)'               # Last 1h, 5m resolution
-  tq --series 'up{job="some-known-small-job"}'   # Series metadata
+  tq '<promql>'                                  # Instant query
+  tq --range '<promql>'                          # Last 1h, 1m resolution
+  tq --range --step 5m '<promql>'                # Last 1h, 5m resolution
+  tq --series '<series-selector>'                # Series metadata
 """,
 )
 
