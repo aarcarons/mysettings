@@ -36,10 +36,19 @@ class MockThanosHandler(BaseHTTPRequestHandler):
             last_request_body = None
 
         self.send_response(mock_response_status_code)
-        self.send_header("Content-Type", "application/json")
-        self.end_headers()
 
-        body = json.dumps(mock_response_payload).encode("utf-8")
+        if isinstance(mock_response_payload, (str, bytes)):
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            if isinstance(mock_response_payload, str):
+                body = mock_response_payload.encode("utf-8")
+            else:
+                body = mock_response_payload
+        else:
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            body = json.dumps(mock_response_payload).encode("utf-8")
+
         self.wfile.write(body)
 
     def do_GET(self):
@@ -179,6 +188,36 @@ class TestTqCommandLine(unittest.TestCase):
         self.assertEqual(res.returncode, 2)
         self.assertIn("--since requires --range, --series, --labels, or --label-values", res.stderr)
 
+    def test_validation_http_timeout_zero(self):
+        res = run_tq(["--http-timeout", "0", "up"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("timeout must be a finite positive number", res.stderr)
+
+    def test_validation_http_timeout_negative(self):
+        res = run_tq(["--http-timeout", "-5.5", "up"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("timeout must be a finite positive number", res.stderr)
+
+    def test_validation_http_timeout_nan(self):
+        res = run_tq(["--http-timeout", "nan", "up"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("timeout must be a finite positive number", res.stderr)
+
+    def test_validation_http_timeout_inf(self):
+        res = run_tq(["--http-timeout", "inf", "up"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("timeout must be a finite positive number", res.stderr)
+
+    def test_validation_http_timeout_non_numeric(self):
+        res = run_tq(["--http-timeout", "abc", "up"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("timeout must be a positive number", res.stderr)
+
+    def test_validation_query_timeout_only_valid_for_instant_or_range(self):
+        res = run_tq(["--series", "--query-timeout", "10s", "up"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("--query-timeout is only valid for instant or range queries", res.stderr)
+
     def test_routing_range_query_with_since(self):
         global mock_response_payload
         mock_response_payload = {
@@ -256,6 +295,17 @@ class TestTqCommandLine(unittest.TestCase):
         qs = urllib.parse.parse_qs(last_request_body)
         self.assertEqual(qs.get("time"), ["1234567890"])
 
+    def test_routing_instant_query_with_query_timeout(self):
+        global mock_response_payload
+        mock_response_payload = {"status": "success", "data": {"resultType": "vector", "result": []}}
+        res = run_tq(["--query-timeout", "10s", "up"])
+        self.assertEqual(res.returncode, 0)
+        self.assertEqual(last_request_method, "POST")
+        self.assertEqual(last_request_path, "/api/v1/query")
+
+        qs = urllib.parse.parse_qs(last_request_body)
+        self.assertEqual(qs.get("timeout"), ["10s"])
+
     def test_routing_range_query(self):
         global mock_response_payload
         mock_response_payload = {
@@ -276,6 +326,17 @@ class TestTqCommandLine(unittest.TestCase):
         self.assertEqual(qs.get("step"), ["5m"])
         self.assertEqual(qs.get("start"), ["100"])
         self.assertEqual(qs.get("end"), ["200"])
+
+    def test_routing_range_query_with_query_timeout(self):
+        global mock_response_payload
+        mock_response_payload = {"status": "success", "data": {"resultType": "matrix", "result": []}}
+        res = run_tq(["--range", "--query-timeout", "30s", "up"])
+        self.assertEqual(res.returncode, 0)
+        self.assertEqual(last_request_method, "POST")
+        self.assertEqual(last_request_path, "/api/v1/query_range")
+
+        qs = urllib.parse.parse_qs(last_request_body)
+        self.assertEqual(qs.get("timeout"), ["30s"])
 
     def test_routing_series_query(self):
         global mock_response_payload
@@ -399,6 +460,61 @@ class TestTqCommandLine(unittest.TestCase):
         self.assertEqual(res.returncode, 0)
         self.assertIn("Warning: warning_test", res.stderr)
         self.assertIn("Info: info_test", res.stderr)
+
+    def test_response_validation_non_object_top_level(self):
+        global mock_response_payload
+        mock_response_payload = []
+        res = run_tq(["up"])
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("Invalid API response: expected a JSON object", res.stderr)
+
+    def test_http_error_envelope_handling_normalized(self):
+        global mock_response_payload, mock_response_status_code
+        mock_response_status_code = 422
+        mock_response_payload = {
+            "status": "error",
+            "errorType": "execution",
+            "error": "bad query",
+        }
+        res = run_tq(["up"])
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("Query error: execution: bad query", res.stderr)
+
+    def test_http_error_envelope_handling_raw(self):
+        global mock_response_payload, mock_response_status_code
+        mock_response_status_code = 422
+        mock_response_payload = {
+            "status": "error",
+            "errorType": "execution",
+            "error": "bad query",
+        }
+        res = run_tq(["--raw-response", "up"])
+        self.assertNotEqual(res.returncode, 0)
+        
+        # Raw mode outputs raw envelope on stdout
+        data = json.loads(res.stdout)
+        self.assertEqual(data["status"], "error")
+        self.assertEqual(data["errorType"], "execution")
+        self.assertEqual(data["error"], "bad query")
+
+        # Stderr must not contain duplicate Query error string
+        self.assertNotIn("Query error:", res.stderr)
+
+    def test_http_error_with_non_json_body(self):
+        global mock_response_payload, mock_response_status_code
+        mock_response_status_code = 502
+        mock_response_payload = "Bad Gateway"
+        res = run_tq(["up"])
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("HTTP 502: Bad Gateway", res.stderr)
+
+    def test_http_error_with_malformed_json(self):
+        global mock_response_payload, mock_response_status_code
+        mock_response_status_code = 400
+        mock_response_payload = "{invalid_json}"
+        res = run_tq(["up"])
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("HTTP 400: {invalid_json}", res.stderr)
 
     def test_legacy_form_compatibility(self):
         # Explicitly verify legacy forms: tq '<promql>', tq --range '<promql>', tq --series '<selector>', tq --raw-response '<promql>'

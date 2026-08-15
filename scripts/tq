@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import math
 import os
 import re
 import signal
@@ -79,6 +80,16 @@ def duration_seconds(value):
     seconds = int(number) * UNITS[unit]
     if seconds <= 0:
         raise argparse.ArgumentTypeError("duration must be greater than zero")
+    return seconds
+
+
+def http_timeout_seconds(value):
+    try:
+        seconds = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("timeout must be a positive number")
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise argparse.ArgumentTypeError("timeout must be a finite positive number")
     return seconds
 
 
@@ -164,6 +175,16 @@ parser.add_argument(
     help="Relative time window from past to now (e.g., 30s, 5m, 2h, 1d, 1w)",
 )
 parser.add_argument(
+    "--query-timeout",
+    help="Server-side Thanos query deadline duration (e.g. 10s, 30s)",
+)
+parser.add_argument(
+    "--http-timeout",
+    type=http_timeout_seconds,
+    default=30.0,
+    help="Local HTTP/socket timeout in seconds used by Python (default: 30)",
+)
+parser.add_argument(
     "--time",
     help="Evaluation time (for instant queries; RFC3339 or Unix timestamp)",
 )
@@ -218,6 +239,9 @@ if args.end and not (args.range or args.series or args.labels or has_label_value
 if args.time and (args.range or args.series or args.labels or has_label_values or args.stores):
     parser.error("--time is only valid for instant queries")
 
+if args.query_timeout is not None and (args.series or args.labels or has_label_values or args.stores):
+    parser.error("--query-timeout is only valid for instant or range queries")
+
 base_url = os.environ.get("THANOS_URL")
 if not base_url:
     parser.error("THANOS_URL environment variable is not defined")
@@ -265,12 +289,14 @@ elif args.range:
         "start": start_val or now - 3600,
         "end": end_val or now,
         "step": args.step or "1m",
+        "timeout": args.query_timeout,
     }
 else:
     endpoint = "/api/v1/query"
     params = {
         "query": query,
         "time": args.time,
+        "timeout": args.query_timeout,
     }
 
 params = {k: v for k, v in params.items() if v is not None}
@@ -303,8 +329,11 @@ req = urllib.request.Request(
 )
 
 try:
-    with urllib.request.urlopen(req, timeout=30) as response:
-        payload = json.loads(response.read())
+    with urllib.request.urlopen(req, timeout=args.http_timeout) as response:
+        payload = json.load(response)
+
+    if not isinstance(payload, dict):
+        sys.exit("Invalid API response: expected a JSON object")
 
     # Diagnostics on stderr (only for normalized mode to prevent duplicate output)
     if not args.raw_response:
@@ -317,7 +346,8 @@ try:
     is_error = payload.get("status") == "error"
 
     if args.raw_response:
-        print(json.dumps(payload, indent=2))
+        json.dump(payload, sys.stdout, indent=2)
+        sys.stdout.write("\n")
         if is_error:
             sys.exit(1)
     else:
@@ -332,24 +362,40 @@ try:
             if isinstance(data, dict):
                 data = data.get("result", data)
 
-        print(json.dumps(data, indent=2))
+        json.dump(data, sys.stdout, indent=2)
+        sys.stdout.write("\n")
 
 except urllib.error.HTTPError as error:
     try:
-        body = error.read().decode()
-    except (OSError, UnicodeDecodeError):
+        body = error.read().decode("utf-8", errors="replace")
+    except OSError:
         body = ""
 
-    if args.raw_response:
+    payload = None
+    is_thanos_error = False
+
+    if body:
         try:
             payload = json.loads(body)
+            if isinstance(payload, dict) and payload.get("status") == "error" and "errorType" in payload and "error" in payload:
+                is_thanos_error = True
         except json.JSONDecodeError:
             pass
-        else:
-            print(json.dumps(payload, indent=2))
-            sys.exit(1)
 
-    sys.exit(f"HTTP {error.code}: {body}")
+    if is_thanos_error:
+        if args.raw_response:
+            json.dump(payload, sys.stdout, indent=2)
+            sys.stdout.write("\n")
+            sys.exit(1)
+        else:
+            sys.exit(f"Query error: {payload.get('errorType')}: {payload.get('error')}")
+
+    # Fallback if the body is not a valid Thanos error envelope
+    if body.strip():
+        sys.exit(f"HTTP {error.code}: {body}")
+    else:
+        sys.exit(f"HTTP {error.code}: {error.reason}")
+
 except urllib.error.URLError as error:
     sys.exit(f"Connection error: {error.reason}")
 except json.JSONDecodeError as error:
