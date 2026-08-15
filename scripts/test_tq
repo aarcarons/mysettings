@@ -109,25 +109,50 @@ class TestTqCommandLine(unittest.TestCase):
         self.assertEqual(res.returncode, 2)
         self.assertIn("--time is only valid for instant queries", res.stderr)
 
-    def test_validation_labels_missing_selector(self):
-        res = run_tq(["--labels"])
-        self.assertEqual(res.returncode, 2)
-        self.assertIn("the following arguments are required: query", res.stderr)
+    def test_routing_labels_missing_selector(self):
+        global mock_response_payload
+        mock_response_payload = {
+            "status": "success",
+            "data": ["__name__", "instance", "job"],
+        }
+        res1 = run_tq(["--labels"])
+        self.assertEqual(res1.returncode, 0)
+        self.assertEqual(last_request_method, "POST")
+        self.assertEqual(last_request_path, "/api/v1/labels")
+        self.assertEqual(last_request_content_type, "application/x-www-form-urlencoded")
 
-    def test_validation_labels_empty_selector(self):
-        res = run_tq(["--labels", "   "])
-        self.assertEqual(res.returncode, 2)
-        self.assertIn("the following arguments are required: query", res.stderr)
+        # Omitted selector means match[] parameter must be absent
+        qs1 = urllib.parse.parse_qs(last_request_body)
+        self.assertNotIn("match[]", qs1)
 
-    def test_validation_label_values_missing_selector(self):
-        res = run_tq(["--label-values", "__name__"])
-        self.assertEqual(res.returncode, 2)
-        self.assertIn("the following arguments are required: query", res.stderr)
+        # Whitespace-only selector should behave identically
+        res2 = run_tq(["--labels", "   "])
+        self.assertEqual(res2.returncode, 0)
+        qs2 = urllib.parse.parse_qs(last_request_body)
+        self.assertNotIn("match[]", qs2)
 
-    def test_validation_label_values_empty_selector(self):
-        res = run_tq(["--label-values", "__name__", "  \t "])
-        self.assertEqual(res.returncode, 2)
-        self.assertIn("the following arguments are required: query", res.stderr)
+    def test_routing_label_values_missing_selector(self):
+        global mock_response_payload
+        mock_response_payload = {
+            "status": "success",
+            "data": ["value-1", "value-2"],
+        }
+        res1 = run_tq(["--label-values", "__name__"])
+        self.assertEqual(res1.returncode, 0)
+        self.assertEqual(last_request_method, "GET")
+        self.assertTrue(last_request_path.startswith("/api/v1/label/__name__/values"))
+
+        # Omitted selector means match[] parameter must be absent
+        parsed1 = urllib.parse.urlparse(last_request_path)
+        qs1 = urllib.parse.parse_qs(parsed1.query)
+        self.assertNotIn("match[]", qs1)
+
+        # Whitespace-only selector should behave identically
+        res2 = run_tq(["--label-values", "__name__", "   "])
+        self.assertEqual(res2.returncode, 0)
+        parsed2 = urllib.parse.urlparse(last_request_path)
+        qs2 = urllib.parse.parse_qs(parsed2.query)
+        self.assertNotIn("match[]", qs2)
 
     def test_validation_label_values_missing_label(self):
         res = run_tq(["--label-values"])
