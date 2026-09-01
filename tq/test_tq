@@ -1,0 +1,1082 @@
+#!/usr/bin/env python3
+
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import unittest
+import urllib.parse
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+# Global storage for mock server state tracking
+last_request_method = None
+last_request_path = None
+last_request_body = None
+last_request_content_type = None
+last_request_headers = None
+mock_response_payload = {}
+mock_response_status_code = 200
+mock_response_body_delay = 0.0
+
+
+class MockThanosHandler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        # Suppress logging to keep unittest output clean
+        return
+
+    def handle_request(self, method):
+        global last_request_method, last_request_path, last_request_body, last_request_content_type, last_request_headers, mock_response_payload, mock_response_status_code, mock_response_body_delay
+        last_request_method = method
+        last_request_path = self.path
+        last_request_content_type = self.headers.get("Content-Type")
+        # self.headers is an email.message.Message: header lookups are
+        # case-insensitive, unlike a plain dict, which matters here since
+        # urllib.request title-cases header names on the wire.
+        last_request_headers = self.headers
+
+        if method == "POST":
+            content_length = int(self.headers.get("Content-Length", 0))
+            last_request_body = self.rfile.read(content_length).decode("utf-8")
+        else:
+            last_request_body = None
+
+        self.send_response(mock_response_status_code)
+
+        if isinstance(mock_response_payload, (str, bytes)):
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            if isinstance(mock_response_payload, str):
+                body = mock_response_payload.encode("utf-8")
+            else:
+                body = mock_response_payload
+        else:
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            body = json.dumps(mock_response_payload).encode("utf-8")
+
+        if mock_response_body_delay > 0:
+            time.sleep(mock_response_body_delay)
+
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+    def do_GET(self):
+        self.handle_request("GET")
+
+    def do_POST(self):
+        self.handle_request("POST")
+
+
+# Configure mock HTTP server on a dynamically assigned free TCP port
+mock_server = HTTPServer(("localhost", 0), MockThanosHandler)
+MOCK_PORT = mock_server.server_port
+MOCK_THANOS_URL = f"http://localhost:{MOCK_PORT}"
+
+# Start serving in a background daemon thread
+t = threading.Thread(target=mock_server.serve_forever, daemon=True)
+t.start()
+
+
+def run_tq(args, env_override=None, set_thanos_url=True):
+    env = dict(os.environ)
+    if set_thanos_url:
+        env["THANOS_URL"] = MOCK_THANOS_URL
+    for key, value in (env_override or {}).items():
+        if value is None:
+            env.pop(key, None)
+        else:
+            env[key] = value
+
+    cmd = [sys.executable, os.path.join(os.path.dirname(__file__), "tq")] + args
+    result = subprocess.run(cmd, env=env, capture_output=True, text=True)
+    return result
+
+
+def write_config(profiles, guidance=None, version=1, mode=0o600):
+    """Writes a temp config.json under a fresh temp dir and returns the dir,
+    suitable for passing as XDG_CONFIG_HOME in env_override."""
+    tmpdir = tempfile.mkdtemp()
+    os.makedirs(os.path.join(tmpdir, "tq"))
+    path = os.path.join(tmpdir, "tq", "config.json")
+    data = {"version": version, "profiles": profiles}
+    if guidance is not None:
+        data["guidance"] = guidance
+    with open(path, "w") as f:
+        json.dump(data, f)
+    os.chmod(path, mode)
+    return tmpdir
+
+
+def write_raw_config(content, mode=0o600):
+    """Like write_config but writes arbitrary (possibly malformed) text."""
+    tmpdir = tempfile.mkdtemp()
+    os.makedirs(os.path.join(tmpdir, "tq"))
+    path = os.path.join(tmpdir, "tq", "config.json")
+    with open(path, "w") as f:
+        f.write(content)
+    os.chmod(path, mode)
+    return tmpdir
+
+
+# auth_command fixtures: inline python one-liners, no fixture files needed.
+AUTH_OK = [sys.executable, "-c", "print('tok-abc')"]
+AUTH_FAIL = [sys.executable, "-c", "import sys; sys.exit(3)"]
+AUTH_EMPTY = [sys.executable, "-c", "pass"]
+AUTH_MULTILINE = [sys.executable, "-c", "print('line1'); print('line2')"]
+AUTH_NOT_FOUND = ["/nonexistent/binary-xyz-does-not-exist"]
+
+
+def auth_marker(marker_path):
+    """An auth_command that would create marker_path if actually run."""
+    return [sys.executable, "-c", f"open({marker_path!r}, 'w').close(); print('tok')"]
+
+
+class TestTqCommandLine(unittest.TestCase):
+    def setUp(self):
+        global last_request_method, last_request_path, last_request_body, last_request_content_type, last_request_headers, mock_response_payload, mock_response_status_code, mock_response_body_delay
+        last_request_method = None
+        last_request_path = None
+        last_request_body = None
+        last_request_content_type = None
+        last_request_headers = None
+        mock_response_payload = {"status": "success", "data": {}}
+        mock_response_status_code = 200
+        mock_response_body_delay = 0.0
+
+    def test_validation_step_requires_range(self):
+        res = run_tq(["--step", "5m", "test_metric"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("--step requires --range", res.stderr)
+
+    def test_validation_start_requires_valid_mode(self):
+        res = run_tq(["--start", "12345", "test_metric"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("--start requires --range", res.stderr)
+
+    def test_validation_end_requires_valid_mode(self):
+        res = run_tq(["--end", "12345", "test_metric"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("--end requires --range", res.stderr)
+
+    def test_validation_time_only_valid_on_instant_query(self):
+        res = run_tq(["--range", "--time", "123", "test_metric"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("--time is only valid for instant queries", res.stderr)
+
+    def test_routing_labels_missing_selector(self):
+        global mock_response_payload
+        mock_response_payload = {
+            "status": "success",
+            "data": ["__name__", "instance", "job"],
+        }
+        res1 = run_tq(["--labels"])
+        self.assertEqual(res1.returncode, 0)
+        self.assertEqual(last_request_method, "POST")
+        self.assertEqual(last_request_path, "/api/v1/labels")
+        self.assertEqual(last_request_content_type, "application/x-www-form-urlencoded")
+
+        # Omitted selector means match[] parameter must be absent
+        qs1 = urllib.parse.parse_qs(last_request_body)
+        self.assertNotIn("match[]", qs1)
+
+        # Whitespace-only selector should behave identically
+        res2 = run_tq(["--labels", "   "])
+        self.assertEqual(res2.returncode, 0)
+        qs2 = urllib.parse.parse_qs(last_request_body)
+        self.assertNotIn("match[]", qs2)
+
+    def test_routing_label_values_missing_selector(self):
+        global mock_response_payload
+        mock_response_payload = {
+            "status": "success",
+            "data": ["value-1", "value-2"],
+        }
+        res1 = run_tq(["--label-values", "__name__"])
+        self.assertEqual(res1.returncode, 0)
+        self.assertEqual(last_request_method, "GET")
+        self.assertTrue(last_request_path.startswith("/api/v1/label/__name__/values"))
+
+        # Omitted selector means match[] parameter must be absent
+        parsed1 = urllib.parse.urlparse(last_request_path)
+        qs1 = urllib.parse.parse_qs(parsed1.query)
+        self.assertNotIn("match[]", qs1)
+
+        # Whitespace-only selector should behave identically
+        res2 = run_tq(["--label-values", "__name__", "   "])
+        self.assertEqual(res2.returncode, 0)
+        parsed2 = urllib.parse.urlparse(last_request_path)
+        qs2 = urllib.parse.parse_qs(parsed2.query)
+        self.assertNotIn("match[]", qs2)
+
+    def test_validation_label_values_missing_label(self):
+        res = run_tq(["--label-values"])
+        self.assertEqual(res.returncode, 2)
+        # Argparse error for expected one argument
+        self.assertIn("expected one argument", res.stderr)
+
+    def test_validation_label_values_empty_label(self):
+        res = run_tq(["--label-values", "", "test_metric"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("--label-values requires a non-empty label name", res.stderr)
+
+    def test_validation_label_values_whitespace_label(self):
+        res = run_tq(["--label-values", "   ", "test_metric"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("--label-values requires a non-empty label name", res.stderr)
+
+    def test_validation_since_invalid_duration(self):
+        res = run_tq(["--range", "--since", "30", "test_metric"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("expected duration like 30s, 5m, 2h, 1d, or 1w", res.stderr)
+
+    def test_validation_since_fractional_duration(self):
+        res = run_tq(["--range", "--since", "0.5s", "test_metric"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("expected duration like 30s, 5m, 2h, 1d, or 1w", res.stderr)
+
+    def test_validation_since_zero_duration(self):
+        res = run_tq(["--range", "--since", "0m", "test_metric"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("duration must be greater than zero", res.stderr)
+
+    def test_validation_since_unsupported_unit(self):
+        res = run_tq(["--range", "--since", "5min", "test_metric"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("expected duration like 30s, 5m, 2h, 1d, or 1w", res.stderr)
+
+    def test_validation_since_cannot_combine_with_start_or_end(self):
+        res1 = run_tq(["--range", "--since", "5m", "--start", "100", "test_metric"])
+        self.assertEqual(res1.returncode, 2)
+        self.assertIn("--since cannot be combined with --start or --end", res1.stderr)
+
+        res2 = run_tq(["--range", "--since", "5m", "--end", "200", "test_metric"])
+        self.assertEqual(res2.returncode, 2)
+        self.assertIn("--since cannot be combined with --start or --end", res2.stderr)
+
+    def test_validation_since_requires_valid_mode(self):
+        res = run_tq(["--since", "5m", "test_metric"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("--since requires --range, --series, --labels, or --label-values", res.stderr)
+
+    def test_validation_http_timeout_zero(self):
+        res = run_tq(["--http-timeout", "0", "test_metric"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("timeout must be a finite positive number", res.stderr)
+
+    def test_validation_http_timeout_negative(self):
+        res = run_tq(["--http-timeout", "-5.5", "test_metric"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("timeout must be a finite positive number", res.stderr)
+
+    def test_validation_http_timeout_nan(self):
+        res = run_tq(["--http-timeout", "nan", "test_metric"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("timeout must be a finite positive number", res.stderr)
+
+    def test_validation_http_timeout_inf(self):
+        res = run_tq(["--http-timeout", "inf", "test_metric"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("timeout must be a finite positive number", res.stderr)
+
+    def test_validation_http_timeout_non_numeric(self):
+        res = run_tq(["--http-timeout", "abc", "test_metric"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("timeout must be a positive number", res.stderr)
+
+    def test_validation_query_timeout_only_valid_for_instant_or_range(self):
+        res = run_tq(["--series", "--query-timeout", "10s", "test_metric"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("--query-timeout is only valid for instant or range queries", res.stderr)
+
+    def test_validation_massive_query_up(self):
+        res = run_tq(["up"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("query 'up' is too massive; select a specific job or matcher instead", res.stderr)
+
+    def test_routing_range_query_with_since(self):
+        global mock_response_payload
+        mock_response_payload = {
+            "status": "success",
+            "data": {
+                "resultType": "matrix",
+                "result": [{"metric": {"__name__": "test_metric"}, "values": [[1234.56, "1"]]}],
+            },
+        }
+        # 5m = 300s duration
+        res = run_tq(["--range", "--since", "5m", "test_metric"])
+        self.assertEqual(res.returncode, 0)
+        self.assertEqual(last_request_method, "POST")
+        self.assertEqual(last_request_path, "/api/v1/query_range")
+        self.assertEqual(last_request_content_type, "application/x-www-form-urlencoded")
+
+        qs = urllib.parse.parse_qs(last_request_body)
+        start = int(qs.get("start")[0])
+        end = int(qs.get("end")[0])
+        # end - start should equal exactly 300 seconds
+        self.assertEqual(end - start, 300)
+
+    def test_routing_series_query_with_since(self):
+        global mock_response_payload
+        mock_response_payload = {
+            "status": "success",
+            "data": [],
+        }
+
+        res = run_tq(["--series", "--since", "5m", "test_metric"])
+        self.assertEqual(res.returncode, 0)
+        self.assertEqual(last_request_method, "POST")
+        self.assertEqual(last_request_path, "/api/v1/series")
+        self.assertEqual(last_request_content_type, "application/x-www-form-urlencoded")
+
+        qs = urllib.parse.parse_qs(last_request_body)
+        start = int(qs.get("start")[0])
+        end = int(qs.get("end")[0])
+        # end - start should equal exactly 300 seconds
+        self.assertEqual(end - start, 300)
+
+    def test_routing_instant_query(self):
+        global mock_response_payload
+        mock_response_payload = {
+            "status": "success",
+            "data": {
+                "resultType": "vector",
+                "result": [{"metric": {"__name__": "test_metric"}, "value": [1234.56, "1"]}],
+            },
+        }
+        res = run_tq(["test_metric"])
+        self.assertEqual(res.returncode, 0)
+        self.assertEqual(last_request_method, "POST")
+        self.assertEqual(last_request_path, "/api/v1/query")
+        self.assertEqual(last_request_content_type, "application/x-www-form-urlencoded")
+
+        # Check parameter in POST body
+        qs = urllib.parse.parse_qs(last_request_body)
+        self.assertEqual(qs.get("query"), ["test_metric"])
+
+        # Check normalized response
+        data = json.loads(res.stdout)
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["metric"]["__name__"], "test_metric")
+
+    def test_header_flag_sent_to_server(self):
+        global mock_response_payload
+        mock_response_payload = {"status": "success", "data": {"resultType": "vector", "result": []}}
+        res = run_tq(["--header", "Authorization: Bearer secret-token", "test_metric"])
+        self.assertEqual(res.returncode, 0)
+        self.assertEqual(last_request_headers.get("Authorization"), "Bearer secret-token")
+
+    def test_header_flag_repeatable(self):
+        global mock_response_payload
+        mock_response_payload = {"status": "success", "data": {"resultType": "vector", "result": []}}
+        res = run_tq(
+            [
+                "--header",
+                "Authorization: Bearer secret-token",
+                "--header",
+                "X-Scope-OrgID: team-a",
+                "test_metric",
+            ]
+        )
+        self.assertEqual(res.returncode, 0)
+        self.assertEqual(last_request_headers.get("Authorization"), "Bearer secret-token")
+        self.assertEqual(last_request_headers.get("X-Scope-OrgID"), "team-a")
+
+    def test_header_flag_invalid_format(self):
+        res = run_tq(["--header", "not-a-valid-header", "test_metric"])
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("invalid header", res.stderr)
+
+    def test_header_file_sent_to_server(self):
+        global mock_response_payload
+        mock_response_payload = {"status": "success", "data": {"resultType": "vector", "result": []}}
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".headers", delete=False) as f:
+            f.write("Authorization: Bearer file-token\n")
+            f.write("X-Scope-OrgID: team-b\n")
+            header_file_path = f.name
+        try:
+            res = run_tq(["--header-file", header_file_path, "test_metric"])
+            self.assertEqual(res.returncode, 0)
+            self.assertEqual(last_request_headers.get("Authorization"), "Bearer file-token")
+            self.assertEqual(last_request_headers.get("X-Scope-OrgID"), "team-b")
+        finally:
+            os.unlink(header_file_path)
+
+    def test_header_flag_overrides_header_file(self):
+        global mock_response_payload
+        mock_response_payload = {"status": "success", "data": {"resultType": "vector", "result": []}}
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".headers", delete=False) as f:
+            f.write("Authorization: Bearer file-token\n")
+            header_file_path = f.name
+        try:
+            res = run_tq(
+                [
+                    "--header-file",
+                    header_file_path,
+                    "--header",
+                    "Authorization: Bearer flag-token",
+                    "test_metric",
+                ]
+            )
+            self.assertEqual(res.returncode, 0)
+            self.assertEqual(last_request_headers.get("Authorization"), "Bearer flag-token")
+        finally:
+            os.unlink(header_file_path)
+
+    def test_header_file_missing(self):
+        res = run_tq(["--header-file", "/nonexistent/path/to/headers", "test_metric"])
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("cannot read --header-file", res.stderr)
+
+    def test_routing_instant_query_with_time(self):
+        global mock_response_payload
+        mock_response_payload = {"status": "success", "data": {"resultType": "vector", "result": []}}
+        res = run_tq(["--time", "1234567890", "test_metric"])
+        self.assertEqual(res.returncode, 0)
+        self.assertEqual(last_request_method, "POST")
+        self.assertEqual(last_request_path, "/api/v1/query")
+        self.assertEqual(last_request_content_type, "application/x-www-form-urlencoded")
+
+        qs = urllib.parse.parse_qs(last_request_body)
+        self.assertEqual(qs.get("time"), ["1234567890"])
+
+    def test_routing_instant_query_with_query_timeout(self):
+        global mock_response_payload
+        mock_response_payload = {"status": "success", "data": {"resultType": "vector", "result": []}}
+        res = run_tq(["--query-timeout", "10s", "test_metric"])
+        self.assertEqual(res.returncode, 0)
+        self.assertEqual(last_request_method, "POST")
+        self.assertEqual(last_request_path, "/api/v1/query")
+
+        qs = urllib.parse.parse_qs(last_request_body)
+        self.assertEqual(qs.get("timeout"), ["10s"])
+
+    def test_routing_range_query(self):
+        global mock_response_payload
+        mock_response_payload = {
+            "status": "success",
+            "data": {
+                "resultType": "matrix",
+                "result": [{"metric": {"__name__": "test_metric"}, "values": [[1234.56, "1"]]}],
+            },
+        }
+        res = run_tq(["--range", "--step", "5m", "--start", "100", "--end", "200", "test_metric"])
+        self.assertEqual(res.returncode, 0)
+        self.assertEqual(last_request_method, "POST")
+        self.assertEqual(last_request_path, "/api/v1/query_range")
+        self.assertEqual(last_request_content_type, "application/x-www-form-urlencoded")
+
+        qs = urllib.parse.parse_qs(last_request_body)
+        self.assertEqual(qs.get("query"), ["test_metric"])
+        self.assertEqual(qs.get("step"), ["5m"])
+        self.assertEqual(qs.get("start"), ["100"])
+        self.assertEqual(qs.get("end"), ["200"])
+
+    def test_routing_range_query_with_query_timeout(self):
+        global mock_response_payload
+        mock_response_payload = {"status": "success", "data": {"resultType": "matrix", "result": []}}
+        res = run_tq(["--range", "--query-timeout", "30s", "test_metric"])
+        self.assertEqual(res.returncode, 0)
+        self.assertEqual(last_request_method, "POST")
+        self.assertEqual(last_request_path, "/api/v1/query_range")
+
+        qs = urllib.parse.parse_qs(last_request_body)
+        self.assertEqual(qs.get("timeout"), ["30s"])
+
+    def test_routing_series_query(self):
+        global mock_response_payload
+        mock_response_payload = {
+            "status": "success",
+            "data": [{"__name__": "test_metric", "instance": "localhost"}],
+        }
+        res = run_tq(["--series", "test_metric"])
+        self.assertEqual(res.returncode, 0)
+        self.assertEqual(last_request_method, "POST")
+        self.assertEqual(last_request_path, "/api/v1/series")
+        self.assertEqual(last_request_content_type, "application/x-www-form-urlencoded")
+
+        qs = urllib.parse.parse_qs(last_request_body)
+        self.assertEqual(qs.get("match[]"), ["test_metric"])
+        # start and end must be absent if not supplied
+        self.assertNotIn("start", qs)
+        self.assertNotIn("end", qs)
+
+        # Check normalization (preserves complete data array)
+        data = json.loads(res.stdout)
+        self.assertEqual(data, [{"__name__": "test_metric", "instance": "localhost"}])
+
+    def test_routing_labels_query(self):
+        global mock_response_payload
+        mock_response_payload = {
+            "status": "success",
+            "data": ["__name__", "instance", "job"],
+        }
+        res = run_tq(["--labels", "--start", "100", "test_metric"])
+        self.assertEqual(res.returncode, 0)
+        self.assertEqual(last_request_method, "POST")
+        self.assertEqual(last_request_path, "/api/v1/labels")
+        self.assertEqual(last_request_content_type, "application/x-www-form-urlencoded")
+
+        qs = urllib.parse.parse_qs(last_request_body)
+        self.assertEqual(qs.get("match[]"), ["test_metric"])
+        self.assertEqual(qs.get("start"), ["100"])
+        self.assertNotIn("end", qs)
+
+        # Check normalization (preserves complete data array)
+        data = json.loads(res.stdout)
+        self.assertEqual(data, ["__name__", "instance", "job"])
+
+    def test_routing_label_values_query(self):
+        global mock_response_payload
+        mock_response_payload = {
+            "status": "success",
+            "data": ["value-1", "value-2"],
+        }
+        # Verify URL encoding of the label name
+        res = run_tq(["--label-values", "some/nested/label", "--end", "200", "test_metric"])
+        self.assertEqual(res.returncode, 0)
+        self.assertEqual(last_request_method, "GET")
+        # Should call encoded path as GET and keep params in URL query string
+        self.assertTrue(last_request_path.startswith("/api/v1/label/some%2Fnested%2Flabel/values?"))
+
+        qs = urllib.parse.parse_qs(urllib.parse.urlparse(last_request_path).query)
+        self.assertEqual(qs.get("match[]"), ["test_metric"])
+        self.assertEqual(qs.get("end"), ["200"])
+        self.assertNotIn("start", qs)
+
+        # Check normalization
+        data = json.loads(res.stdout)
+        self.assertEqual(data, ["value-1", "value-2"])
+
+    def test_raw_response_handling(self):
+        global mock_response_payload
+        mock_response_payload = {
+            "status": "success",
+            "data": {"resultType": "vector", "result": [{"value": [1, "1"]}]},
+            "warnings": ["w1"],
+            "infos": ["i1"],
+        }
+        res = run_tq(["--raw-response", "test_metric"])
+        self.assertEqual(res.returncode, 0)
+
+        # Raw response must contain the complete payload envelope
+        data = json.loads(res.stdout)
+        self.assertEqual(data["status"], "success")
+        self.assertIn("warnings", data)
+        self.assertIn("infos", data)
+
+        # Raw mode should not duplicate warnings/infos to stderr
+        self.assertNotIn("Warning: w1", res.stderr)
+        self.assertNotIn("Info: i1", res.stderr)
+
+    def test_normalized_warnings_and_infos(self):
+        global mock_response_payload
+        mock_response_payload = {
+            "status": "success",
+            "data": {"resultType": "vector", "result": []},
+            "warnings": ["warning_test"],
+            "infos": ["info_test"],
+        }
+        res = run_tq(["test_metric"])
+        self.assertEqual(res.returncode, 0)
+        self.assertIn("Warning: warning_test", res.stderr)
+        self.assertIn("Info: info_test", res.stderr)
+
+    def test_response_validation_non_object_top_level(self):
+        global mock_response_payload
+        mock_response_payload = []
+        res = run_tq(["test_metric"])
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("Invalid API response: expected a JSON object", res.stderr)
+
+    def test_http_error_envelope_handling_normalized(self):
+        global mock_response_payload, mock_response_status_code
+        mock_response_status_code = 422
+        mock_response_payload = {
+            "status": "error",
+            "errorType": "execution",
+            "error": "bad query",
+        }
+        res = run_tq(["test_metric"])
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("Query error: execution: bad query", res.stderr)
+
+    def test_http_error_envelope_handling_raw(self):
+        global mock_response_payload, mock_response_status_code
+        mock_response_status_code = 422
+        mock_response_payload = {
+            "status": "error",
+            "errorType": "execution",
+            "error": "bad query",
+        }
+        res = run_tq(["--raw-response", "test_metric"])
+        self.assertNotEqual(res.returncode, 0)
+        
+        # Raw mode outputs raw envelope on stdout
+        data = json.loads(res.stdout)
+        self.assertEqual(data["status"], "error")
+        self.assertEqual(data["errorType"], "execution")
+        self.assertEqual(data["error"], "bad query")
+
+        # Stderr must not contain duplicate Query error string
+        self.assertNotIn("Query error:", res.stderr)
+
+    def test_http_error_with_non_json_body(self):
+        global mock_response_payload, mock_response_status_code
+        mock_response_status_code = 502
+        mock_response_payload = "Bad Gateway"
+        res = run_tq(["test_metric"])
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("HTTP 502: Bad Gateway", res.stderr)
+
+    def test_http_error_with_malformed_json(self):
+        global mock_response_payload, mock_response_status_code
+        mock_response_status_code = 400
+        mock_response_payload = "{invalid_json}"
+        res = run_tq(["test_metric"])
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("HTTP 400: {invalid_json}", res.stderr)
+
+    def test_mid_response_body_read_timeout(self):
+        global mock_response_payload, mock_response_body_delay
+        mock_response_payload = {"status": "success", "data": []}
+        # Delay the response body writing by 0.5 seconds
+        mock_response_body_delay = 0.5
+        # Set a short http timeout of 0.1 seconds to trigger read timeout
+        res = run_tq(["--http-timeout", "0.1", "test_metric"])
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("Connection error: timed out", res.stderr)
+
+    def test_legacy_form_compatibility(self):
+        # Explicitly verify legacy forms: tq '<promql>', tq --range '<promql>', tq --series '<selector>', tq --raw-response '<promql>'
+        global mock_response_payload
+        mock_response_payload = {"status": "success", "data": {"resultType": "vector", "result": []}}
+
+        res1 = run_tq(["test_metric"])
+        self.assertEqual(res1.returncode, 0)
+        self.assertEqual(last_request_method, "POST")
+        self.assertEqual(last_request_path, "/api/v1/query")
+
+        res2 = run_tq(["--range", "test_metric"])
+        self.assertEqual(res2.returncode, 0)
+        self.assertEqual(last_request_method, "POST")
+        self.assertEqual(last_request_path, "/api/v1/query_range")
+
+        mock_response_payload = {"status": "success", "data": []}
+        res3 = run_tq(["--series", "test_metric"])
+        self.assertEqual(res3.returncode, 0)
+        self.assertEqual(last_request_method, "POST")
+        self.assertEqual(last_request_path, "/api/v1/series")
+
+        res4 = run_tq(["--raw-response", "test_metric"])
+        self.assertEqual(res4.returncode, 0)
+
+
+class TestTqProfiles(unittest.TestCase):
+    def setUp(self):
+        global last_request_method, last_request_path, last_request_body, last_request_content_type, last_request_headers, mock_response_payload, mock_response_status_code, mock_response_body_delay
+        last_request_method = None
+        last_request_path = None
+        last_request_body = None
+        last_request_content_type = None
+        last_request_headers = None
+        mock_response_payload = {"status": "success", "data": {"resultType": "vector", "result": []}}
+        mock_response_status_code = 200
+        mock_response_body_delay = 0.0
+        self._tmpdirs = []
+
+    def tearDown(self):
+        import shutil
+        for d in self._tmpdirs:
+            shutil.rmtree(d, ignore_errors=True)
+
+    def config_env(self, profiles, guidance=None, **kwargs):
+        tmpdir = write_config(profiles, guidance=guidance, **kwargs)
+        self._tmpdirs.append(tmpdir)
+        return {"XDG_CONFIG_HOME": tmpdir, "THANOS_URL": None}
+
+    def raw_config_env(self, content, **kwargs):
+        tmpdir = write_raw_config(content, **kwargs)
+        self._tmpdirs.append(tmpdir)
+        return {"XDG_CONFIG_HOME": tmpdir, "THANOS_URL": None}
+
+    # --- resolution ---
+
+    def test_profile_missing_config_file(self):
+        tmpdir = tempfile.mkdtemp()
+        self._tmpdirs.append(tmpdir)
+        res = run_tq(["--profile", "x", "test_metric"], env_override={"XDG_CONFIG_HOME": tmpdir, "THANOS_URL": None})
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("not found", res.stderr)
+
+    def test_profile_unknown_name_lists_sorted_available(self):
+        env = self.config_env({"zeta": {"url": MOCK_THANOS_URL}, "alpha": {"url": MOCK_THANOS_URL}})
+        res = run_tq(["--profile", "nope", "test_metric"], env_override=env)
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("unknown profile 'nope'", res.stderr)
+        self.assertIn("alpha, zeta", res.stderr)
+
+    def test_profile_missing_url(self):
+        env = self.config_env({"x": {"description": "no url"}})
+        res = run_tq(["--profile", "x", "test_metric"], env_override=env)
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("missing a 'url'", res.stderr)
+
+    def test_url_flag_alone(self):
+        res = run_tq(["--url", MOCK_THANOS_URL, "test_metric"], set_thanos_url=False)
+        self.assertEqual(res.returncode, 0)
+        self.assertEqual(last_request_path, "/api/v1/query")
+
+    def test_tq_url_env_var_alone(self):
+        res = run_tq(["test_metric"], env_override={"TQ_URL": MOCK_THANOS_URL}, set_thanos_url=False)
+        self.assertEqual(res.returncode, 0)
+        self.assertEqual(last_request_path, "/api/v1/query")
+
+    def test_tq_url_takes_precedence_over_thanos_url(self):
+        res = run_tq(["test_metric"], env_override={"TQ_URL": MOCK_THANOS_URL, "THANOS_URL": "http://127.0.0.1:1"})
+        self.assertEqual(res.returncode, 0)
+        self.assertEqual(last_request_path, "/api/v1/query")
+
+    def test_profile_takes_precedence_over_thanos_url(self):
+        env = self.config_env({"x": {"url": MOCK_THANOS_URL}})
+        env["THANOS_URL"] = "http://127.0.0.1:1"
+        res = run_tq(["--profile", "x", "test_metric"], env_override=env, set_thanos_url=False)
+        self.assertEqual(res.returncode, 0)
+        self.assertEqual(last_request_path, "/api/v1/query")
+
+    def test_profile_and_url_conflict(self):
+        env = self.config_env({"x": {"url": MOCK_THANOS_URL}})
+        res = run_tq(["--profile", "x", "--url", MOCK_THANOS_URL, "test_metric"], env_override=env)
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("cannot be combined", res.stderr)
+
+    def test_group_writable_config_rejected(self):
+        env = self.config_env({"x": {"url": MOCK_THANOS_URL}}, mode=0o660)
+        res = run_tq(["--profile", "x", "test_metric"], env_override=env)
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("writable", res.stderr)
+
+    def test_world_readable_config_allowed(self):
+        env = self.config_env({"x": {"url": MOCK_THANOS_URL}}, mode=0o644)
+        res = run_tq(["--profile", "x", "test_metric"], env_override=env)
+        self.assertEqual(res.returncode, 0)
+
+    def test_plain_thanos_url_never_opens_config_file(self):
+        # Point XDG_CONFIG_HOME/tq/config.json at a directory (not a file) --
+        # if tq ever tried to open it without --profile/--list-profiles/
+        # --show-profile, this would raise. Plain THANOS_URL usage must not
+        # touch it at all.
+        tmpdir = tempfile.mkdtemp()
+        self._tmpdirs.append(tmpdir)
+        os.makedirs(os.path.join(tmpdir, "tq", "config.json"))  # a directory, not a file
+        res = run_tq(["test_metric"], env_override={"XDG_CONFIG_HOME": tmpdir})
+        self.assertEqual(res.returncode, 0)
+
+    def test_malformed_json_config(self):
+        env = self.raw_config_env("{not valid json")
+        res = run_tq(["--profile", "x", "test_metric"], env_override=env)
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("cannot parse config file", res.stderr)
+
+    def test_unsupported_config_version(self):
+        env = self.config_env({"x": {"url": MOCK_THANOS_URL}}, version=2)
+        res = run_tq(["--profile", "x", "test_metric"], env_override=env)
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("unsupported config version", res.stderr)
+
+    def test_boolean_version_rejected(self):
+        # JSON `true` == 1 in Python, but must not be accepted as version 1.
+        env = self.config_env({"x": {"url": MOCK_THANOS_URL}}, version=True)
+        res = run_tq(["--profile", "x", "test_metric"], env_override=env)
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("unsupported config version", res.stderr)
+
+    def test_float_version_rejected(self):
+        # JSON `1.0` == 1 in Python, but must not be accepted as version 1.
+        env = self.config_env({"x": {"url": MOCK_THANOS_URL}}, version=1.0)
+        res = run_tq(["--profile", "x", "test_metric"], env_override=env)
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("unsupported config version", res.stderr)
+
+    def test_auth_command_missing_command(self):
+        env = self.config_env({"x": {"url": MOCK_THANOS_URL, "auth_command": {}}})
+        res = run_tq(["--profile", "x", "test_metric"], env_override=env)
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("auth_command.command", res.stderr)
+
+    def test_auth_command_boolean_timeout_rejected(self):
+        env = self.config_env({"x": {"url": MOCK_THANOS_URL, "auth_command": {"command": AUTH_OK, "timeout": True}}})
+        res = run_tq(["--profile", "x", "test_metric"], env_override=env)
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("auth_command.timeout", res.stderr)
+
+    def test_static_header_with_crlf_rejected(self):
+        env = self.config_env({"x": {"url": MOCK_THANOS_URL, "headers": {"X-Test": "bad\r\nvalue"}}})
+        res = run_tq(["--profile", "x", "test_metric"], env_override=env)
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("CR/LF", res.stderr)
+
+    def test_static_header_empty_name_rejected(self):
+        env = self.config_env({"x": {"url": MOCK_THANOS_URL, "headers": {"": "value"}}})
+        res = run_tq(["--profile", "x", "test_metric"], env_override=env)
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("must not be empty", res.stderr)
+
+    def test_static_header_whitespace_only_name_rejected(self):
+        env = self.config_env({"x": {"url": MOCK_THANOS_URL, "headers": {"   ": "value"}}})
+        res = run_tq(["--profile", "x", "test_metric"], env_override=env)
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("must not be empty", res.stderr)
+
+    def test_auth_command_whitespace_only_header_name_rejected(self):
+        env = self.config_env({"x": {"url": MOCK_THANOS_URL, "auth_command": {"command": AUTH_OK, "header": "   "}}})
+        res = run_tq(["--profile", "x", "test_metric"], env_override=env)
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("auth_command.header", res.stderr)
+
+    def test_auth_command_empty_header_name_rejected(self):
+        env = self.config_env({"x": {"url": MOCK_THANOS_URL, "auth_command": {"command": AUTH_OK, "header": ""}}})
+        res = run_tq(["--profile", "x", "test_metric"], env_override=env)
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("auth_command.header", res.stderr)
+
+    def test_missing_version_is_rejected(self):
+        # version is required, not defaulted to 1 -- a config that omits it
+        # entirely must fail loudly rather than silently assuming version 1.
+        env = self.raw_config_env(json.dumps({"profiles": {"x": {"url": MOCK_THANOS_URL}}}))
+        res = run_tq(["--profile", "x", "test_metric"], env_override=env)
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("missing required 'version'", res.stderr)
+
+    def test_header_flag_with_embedded_newline_rejected(self):
+        res = run_tq(["--header", "X-Test: a\nInjected: evil", "test_metric"])
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("CR/LF", res.stderr)
+
+    def test_header_flag_empty_name_rejected(self):
+        res = run_tq(["--header", ": value", "test_metric"])
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("must not be empty", res.stderr)
+
+    # Note: --header-file lines go through parse_header (same CR/LF check as
+    # --header), but a genuinely embedded CR/LF can't reach it in practice --
+    # Python's text-mode universal-newline reading already splits a file on
+    # bare \r as a line boundary, so there's no meaningful injection case to
+    # reproduce here distinct from test_header_flag_with_embedded_newline_rejected.
+
+    # --- headers / auth ---
+
+    def test_profile_static_headers_sent(self):
+        env = self.config_env({"x": {"url": MOCK_THANOS_URL, "headers": {"X-Test": "hello"}}})
+        res = run_tq(["--profile", "x", "test_metric"], env_override=env)
+        self.assertEqual(res.returncode, 0)
+        self.assertEqual(last_request_headers.get("X-Test"), "hello")
+
+    def test_header_case_insensitive_override(self):
+        env = self.config_env({"x": {"url": MOCK_THANOS_URL, "headers": {"Authorization": "profile-value"}}})
+        res = run_tq(["--profile", "x", "-H", "authorization: flag-value", "test_metric"], env_override=env)
+        self.assertEqual(res.returncode, 0)
+        self.assertEqual(last_request_headers.get("Authorization"), "flag-value")
+
+    def test_auth_command_default_header_and_prefix(self):
+        env = self.config_env({"x": {"url": MOCK_THANOS_URL, "auth_command": {"command": AUTH_OK}}})
+        res = run_tq(["--profile", "x", "test_metric"], env_override=env)
+        self.assertEqual(res.returncode, 0)
+        self.assertEqual(last_request_headers.get("Authorization"), "Bearer tok-abc")
+
+    def test_auth_command_custom_header_and_prefix(self):
+        env = self.config_env({
+            "x": {
+                "url": MOCK_THANOS_URL,
+                "auth_command": {"command": AUTH_OK, "header": "X-Token", "prefix": "tok="},
+            }
+        })
+        res = run_tq(["--profile", "x", "test_metric"], env_override=env)
+        self.assertEqual(res.returncode, 0)
+        self.assertEqual(last_request_headers.get("X-Token"), "tok=tok-abc")
+
+    def test_auth_command_configurable_timeout_enforced(self):
+        sleeper = [sys.executable, "-c", "import time; time.sleep(5)"]
+        env = self.config_env({"x": {"url": MOCK_THANOS_URL, "auth_command": {"command": sleeper, "timeout": 0.2}}})
+        start = time.monotonic()
+        res = run_tq(["--profile", "x", "test_metric"], env_override=env)
+        elapsed = time.monotonic() - start
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("timed out", res.stderr)
+        self.assertLess(elapsed, 4)
+
+    def test_auth_command_nonzero_exit(self):
+        env = self.config_env({"x": {"url": MOCK_THANOS_URL, "auth_command": {"command": AUTH_FAIL}}})
+        res = run_tq(["--profile", "x", "test_metric"], env_override=env)
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("exited with status 3", res.stderr)
+
+    def test_auth_command_empty_output(self):
+        env = self.config_env({"x": {"url": MOCK_THANOS_URL, "auth_command": {"command": AUTH_EMPTY}}})
+        res = run_tq(["--profile", "x", "test_metric"], env_override=env)
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("no output", res.stderr)
+
+    def test_auth_command_multiline_output_rejected(self):
+        env = self.config_env({"x": {"url": MOCK_THANOS_URL, "auth_command": {"command": AUTH_MULTILINE}}})
+        res = run_tq(["--profile", "x", "test_metric"], env_override=env)
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("multiline", res.stderr)
+
+    def test_auth_command_not_found(self):
+        env = self.config_env({"x": {"url": MOCK_THANOS_URL, "auth_command": {"command": AUTH_NOT_FOUND}}})
+        res = run_tq(["--profile", "x", "test_metric"], env_override=env)
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("could not be run", res.stderr)
+
+    def test_auth_command_skipped_when_header_overridden(self):
+        marker_dir = tempfile.mkdtemp()
+        self._tmpdirs.append(marker_dir)
+        marker = os.path.join(marker_dir, "marker")
+        env = self.config_env({"x": {"url": MOCK_THANOS_URL, "auth_command": {"command": auth_marker(marker)}}})
+        res = run_tq(["--profile", "x", "-H", "Authorization: Bearer manual", "test_metric"], env_override=env)
+        self.assertEqual(res.returncode, 0)
+        self.assertFalse(os.path.exists(marker), "auth_command must not run when its header is already overridden")
+        self.assertEqual(last_request_headers.get("Authorization"), "Bearer manual")
+
+    # --- --list-profiles / --show-profile ---
+
+    def test_list_profiles_json_shape_and_sorted_order(self):
+        env = self.config_env(
+            {
+                "zeta": {"url": MOCK_THANOS_URL, "description": "z"},
+                "alpha": {"url": MOCK_THANOS_URL, "description": "a"},
+            },
+            guidance=["note 1"],
+        )
+        res = run_tq(["--list-profiles"], env_override=env)
+        self.assertEqual(res.returncode, 0)
+        data = json.loads(res.stdout)
+        self.assertEqual(data["guidance"], ["note 1"])
+        self.assertEqual([p["name"] for p in data["profiles"]], ["alpha", "zeta"])
+
+    def test_list_profiles_redacts_secrets(self):
+        env = self.config_env({
+            "x": {
+                "url": MOCK_THANOS_URL,
+                "headers": {"X-Secret": "super-secret-value"},
+                "auth_command": {"command": ["some-cli", "--token", "topsecret"]},
+            }
+        })
+        res = run_tq(["--list-profiles"], env_override=env)
+        self.assertEqual(res.returncode, 0)
+        self.assertNotIn("super-secret-value", res.stdout)
+        self.assertNotIn("topsecret", res.stdout)
+        self.assertNotIn("some-cli", res.stdout)
+        data = json.loads(res.stdout)
+        self.assertNotIn("headers", data["profiles"][0])
+        self.assertNotIn("auth_command", data["profiles"][0])
+
+    def test_show_profile_redacts_secrets_but_names_header(self):
+        env = self.config_env({
+            "x": {
+                "url": MOCK_THANOS_URL,
+                "auth_command": {"command": ["some-cli", "--token", "topsecret"], "header": "X-Token"},
+            }
+        })
+        res = run_tq(["--show-profile", "x"], env_override=env)
+        self.assertEqual(res.returncode, 0)
+        self.assertNotIn("topsecret", res.stdout)
+        self.assertNotIn("some-cli", res.stdout)
+        data = json.loads(res.stdout)
+        self.assertEqual(data["auth_header_name"], "X-Token")
+
+    def test_list_and_show_profile_never_run_auth_command(self):
+        marker_dir = tempfile.mkdtemp()
+        self._tmpdirs.append(marker_dir)
+        marker = os.path.join(marker_dir, "marker")
+        env = self.config_env({"x": {"url": MOCK_THANOS_URL, "auth_command": {"command": auth_marker(marker)}}})
+        res1 = run_tq(["--list-profiles"], env_override=env)
+        self.assertEqual(res1.returncode, 0)
+        self.assertFalse(os.path.exists(marker))
+        res2 = run_tq(["--show-profile", "x"], env_override=env)
+        self.assertEqual(res2.returncode, 0)
+        self.assertFalse(os.path.exists(marker))
+
+    def test_list_profiles_no_config_file(self):
+        tmpdir = tempfile.mkdtemp()
+        self._tmpdirs.append(tmpdir)
+        res = run_tq(["--list-profiles"], env_override={"XDG_CONFIG_HOME": tmpdir, "THANOS_URL": None})
+        self.assertEqual(res.returncode, 0)
+        data = json.loads(res.stdout)
+        self.assertEqual(data, {"guidance": [], "profiles": []})
+
+    def test_show_profile_no_config_file(self):
+        tmpdir = tempfile.mkdtemp()
+        self._tmpdirs.append(tmpdir)
+        res = run_tq(["--show-profile", "x"], env_override={"XDG_CONFIG_HOME": tmpdir, "THANOS_URL": None})
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("not found", res.stderr)
+
+    def test_list_profiles_rejects_query_args(self):
+        res = run_tq(["--list-profiles", "test_metric"])
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("takes no query", res.stderr)
+
+    def test_list_profiles_rejects_range_flag(self):
+        res = run_tq(["--list-profiles", "--range"])
+        self.assertEqual(res.returncode, 2)
+
+    def test_list_profiles_conflicts_with_profile_flag(self):
+        res = run_tq(["--list-profiles", "--profile", "x"])
+        self.assertEqual(res.returncode, 2)
+
+    def test_list_profiles_rejects_every_request_option(self):
+        # Regression: --list-profiles/--show-profile must reject *every*
+        # request-related flag, not just query/mode flags -- previously
+        # `tq --list-profiles --raw-response --header-file /missing
+        # --http-timeout 1` silently ignored everything after --list-profiles
+        # and succeeded.
+        rejected_invocations = [
+            ["--list-profiles", "--start", "100"],
+            ["--list-profiles", "--end", "200"],
+            ["--list-profiles", "--step", "5m"],
+            ["--list-profiles", "--since", "5m"],
+            ["--list-profiles", "--time", "100"],
+            ["--list-profiles", "--query-timeout", "10s"],
+            ["--list-profiles", "--http-timeout", "1"],
+            ["--list-profiles", "--raw-response"],
+            ["--list-profiles", "--header", "X: y"],
+            ["--list-profiles", "--header-file", "/definitely/missing"],
+            ["--list-profiles", "--url", "http://example.invalid"],
+            ["--show-profile", "x", "--raw-response"],
+            ["--show-profile", "x", "--header-file", "/definitely/missing"],
+        ]
+        for args in rejected_invocations:
+            with self.subTest(args=args):
+                res = run_tq(args)
+                self.assertEqual(res.returncode, 2, f"expected rejection for {args}, got stdout={res.stdout!r}")
+                self.assertIn("takes no query", res.stderr)
+
+    def test_http_timeout_default_does_not_trigger_profile_info_rejection(self):
+        # --http-timeout defaults to None internally (not 30.0) specifically
+        # so the check above can tell "explicitly passed" apart from
+        # "using the default" -- confirm not passing it at all still works.
+        res = run_tq(["--list-profiles"])
+        self.assertEqual(res.returncode, 0)
+
+    def test_show_profile_unknown_name(self):
+        env = self.config_env({"x": {"url": MOCK_THANOS_URL}})
+        res = run_tq(["--show-profile", "nope"], env_override=env)
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("unknown profile 'nope'", res.stderr)
+
+    def test_show_profile_guidance_included(self):
+        env = self.config_env({"x": {"url": MOCK_THANOS_URL, "guidance": ["profile-specific note"]}})
+        res = run_tq(["--show-profile", "x"], env_override=env)
+        self.assertEqual(res.returncode, 0)
+        data = json.loads(res.stdout)
+        self.assertEqual(data["guidance"], ["profile-specific note"])
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,0 +1,765 @@
+#!/usr/bin/env python3
+
+import argparse
+import json
+import math
+import os
+import re
+import signal
+import stat
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+
+# Restore default Unix SIGPIPE behavior for pipelines (e.g. | head)
+signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+
+DESCRIPTION = """\
+Query a Thanos/Prometheus API endpoint and print JSON.
+
+AI:
+  If connection profiles might be relevant (multiple backends, a migration,
+  or tenant-specific data), run `tq --list-profiles` first, then use
+  `--profile NAME`. An empty result from one profile does not prove another
+  profile lacks the data -- query multiple profiles when coverage is
+  uncertain rather than assuming. Otherwise, run the user's requested tq
+  command directly; configuration or connectivity failures will be reported
+  by that invocation.
+"""
+
+HELP_OUTPUT_TEXT = r"""Detailed Output Format and Recipes for tq
+
+1. Response Normalization:
+   By default, tq strips the outer Prometheus envelope:
+   Raw:       {"status": "success", "data": {"resultType": "vector", "result": [...]}}
+   Normalized: [...] (the array of results directly)
+
+   This enables clean downstream piping into jq, e.g.:
+     tq '<promql>' | jq '.[].metric'
+
+2. Sample Values and Floating-Point Special Cases:
+   - Timestamps are Unix timestamps represented as JSON numbers.
+   - Prometheus encodes sample values as JSON strings. This also permits special
+     floating-point values such as "NaN", "+Inf", and "-Inf", which JSON numbers
+     cannot represent.
+   - If converting values in jq, use 'tonumber' for ordinary numeric values; special
+     values such as "NaN" and infinities require separate handling:
+     tq '<promql>' | jq '.[].value[1] | tonumber'
+
+3. Common jq Recipes:
+   - Extracting all metrics:
+     tq '<promql>' | jq '.[].metric'
+
+   - Inspecting range query values:
+     tq --range '<promql>' | jq '.[].values'
+
+   - Format instance/value pairs:
+     tq '<promql>' | jq -r '.[] | "\(.metric.instance): \(.value[1])"'
+"""
+
+
+class OutputHelpAction(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        sys.stdout.write(HELP_OUTPUT_TEXT)
+        parser.exit()
+
+
+UNITS = {
+    "s": 1,
+    "m": 60,
+    "h": 3600,
+    "d": 86400,
+    "w": 604800,
+}
+
+
+def duration_seconds(value):
+    match = re.fullmatch(r"(\d+)([smhdw])", value)
+    if not match:
+        raise argparse.ArgumentTypeError(
+            "expected duration like 30s, 5m, 2h, 1d, or 1w"
+        )
+
+    number, unit = match.groups()
+    seconds = int(number) * UNITS[unit]
+    if seconds <= 0:
+        raise argparse.ArgumentTypeError("duration must be greater than zero")
+    return seconds
+
+
+def http_timeout_seconds(value):
+    try:
+        seconds = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("timeout must be a positive number")
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise argparse.ArgumentTypeError("timeout must be a finite positive number")
+    return seconds
+
+
+# region Connection profile configuration
+#
+# Profiles let tq talk to more than one Prometheus-compatible backend without
+# baking any backend-specific URL/auth/tenant knowledge into this script.
+# Everything here is driven entirely by a private, declarative config file
+# (~/.config/tq/config.json by default) that the user maintains themselves;
+# tq has zero built-in knowledge of any specific backend.
+
+AUTH_COMMAND_STDERR_LIMIT = 200  # bounded, and stdout is never included
+
+
+def _has_crlf(value):
+    return "\r" in value or "\n" in value
+
+
+def config_path():
+    base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    return os.path.join(base, "tq", "config.json")
+
+
+def _validate_profile(name, profile, path):
+    if not isinstance(profile, dict):
+        parser.error(f"invalid config file {path}: profile {name!r} must be an object")
+
+    url = profile.get("url")
+    if not isinstance(url, str) or not url:
+        parser.error(f"invalid config file {path}: profile {name!r} is missing a 'url'")
+    if not url.startswith(("http://", "https://")):
+        parser.error(f"invalid config file {path}: profile {name!r}: url must start with http:// or https://")
+
+    if "description" in profile and not isinstance(profile["description"], str):
+        parser.error(f"invalid config file {path}: profile {name!r}: 'description' must be a string")
+
+    if "guidance" in profile:
+        guidance = profile["guidance"]
+        if not isinstance(guidance, list) or not all(isinstance(g, str) for g in guidance):
+            parser.error(f"invalid config file {path}: profile {name!r}: 'guidance' must be a list of strings")
+
+    if "headers" in profile:
+        headers = profile["headers"]
+        if not isinstance(headers, dict):
+            parser.error(f"invalid config file {path}: profile {name!r}: 'headers' must be an object")
+        for header_name, header_value in headers.items():
+            if not isinstance(header_name, str) or not isinstance(header_value, str):
+                parser.error(f"invalid config file {path}: profile {name!r}: 'headers' must map strings to strings")
+            if not header_name.strip():
+                parser.error(f"invalid config file {path}: profile {name!r}: 'headers' names must not be empty or whitespace-only")
+            if _has_crlf(header_name) or _has_crlf(header_value):
+                parser.error(f"invalid config file {path}: profile {name!r}: 'headers' must not contain CR/LF")
+
+    if "auth_command" in profile:
+        auth_command = profile["auth_command"]
+        if not isinstance(auth_command, dict):
+            parser.error(f"invalid config file {path}: profile {name!r}: 'auth_command' must be an object")
+
+        command = auth_command.get("command")
+        if not isinstance(command, list) or not command or not all(isinstance(c, str) for c in command):
+            parser.error(
+                f"invalid config file {path}: profile {name!r}: 'auth_command.command' must be a non-empty list of strings"
+            )
+
+        header_name = auth_command.get("header", "Authorization")
+        if not isinstance(header_name, str) or not header_name.strip() or _has_crlf(header_name):
+            parser.error(
+                f"invalid config file {path}: profile {name!r}: "
+                "'auth_command.header' must be a non-empty, non-whitespace-only string with no CR/LF"
+            )
+
+        prefix = auth_command.get("prefix", "Bearer ")
+        if not isinstance(prefix, str) or _has_crlf(prefix):
+            parser.error(f"invalid config file {path}: profile {name!r}: 'auth_command.prefix' must be a string with no CR/LF")
+
+        if "timeout" in auth_command:
+            timeout = auth_command["timeout"]
+            # isinstance(True, int) is True in Python -- explicitly exclude bools.
+            if isinstance(timeout, bool) or not isinstance(timeout, (int, float)):
+                parser.error(f"invalid config file {path}: profile {name!r}: 'auth_command.timeout' must be numeric")
+            if not math.isfinite(timeout) or timeout <= 0:
+                parser.error(f"invalid config file {path}: profile {name!r}: 'auth_command.timeout' must be a finite positive number")
+
+
+def load_config():
+    """Reads, parses, and fully validates the config file. Returns (data, path);
+    data is None if the file doesn't exist. Every profile is validated eagerly
+    (not just the one in use) so a malformed config fails loudly up front."""
+    path = config_path()
+    try:
+        st = os.stat(path)
+    except FileNotFoundError:
+        return None, path
+    except OSError as error:
+        parser.error(f"cannot read config file {path}: {error}")
+
+    if st.st_mode & 0o022:
+        parser.error(
+            f"config file {path} is group- or world-writable; refusing to use it "
+            f"(it can direct tq to execute a program -- run 'chmod 600 {path}')"
+        )
+
+    try:
+        with open(path) as f:
+            raw = f.read()
+    except OSError as error:
+        parser.error(f"cannot read config file {path}: {error}")
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as error:
+        parser.error(f"cannot parse config file {path}: {error}")
+
+    if not isinstance(data, dict) or not isinstance(data.get("profiles"), dict):
+        parser.error(f"invalid config file {path}: expected an object with a 'profiles' object")
+
+    if "version" not in data:
+        parser.error(f"invalid config file {path}: missing required 'version' field (expected 1)")
+    version = data["version"]
+    # type(x) is not int (rather than isinstance/!=) so JSON true/1.0 --
+    # which compare equal to 1 in Python -- are correctly rejected too.
+    if type(version) is not int or version != 1:
+        parser.error(f"unsupported config version {version!r} in {path}; expected 1")
+
+    if "guidance" in data:
+        guidance = data["guidance"]
+        if not isinstance(guidance, list) or not all(isinstance(g, str) for g in guidance):
+            parser.error(f"invalid config file {path}: top-level 'guidance' must be a list of strings")
+
+    for name, profile in data["profiles"].items():
+        _validate_profile(name, profile, path)
+
+    return data, path
+
+
+def resolve_profile(name):
+    data, path = load_config()
+    if data is None:
+        parser.error(f"--profile requires a config file at {path} (not found)")
+    profiles = data["profiles"]
+    if name not in profiles:
+        available = ", ".join(sorted(profiles)) or "(none configured)"
+        parser.error(f"unknown profile {name!r} in {path}; available profiles: {available}")
+    return profiles[name]
+
+
+def set_header(headers, name, value):
+    """Case-insensitive replace-or-insert: HTTP header names are
+    case-insensitive, but a plain dict isn't, so precedence between sources
+    (profile headers, auth_command, --header-file, --header) wouldn't
+    actually hold across case variants (e.g. Authorization vs authorization)
+    without this."""
+    for existing in list(headers):
+        if existing.lower() == name.lower():
+            del headers[existing]
+    headers[name] = value
+
+
+def run_auth_command(profile_name, spec):
+    command = spec["command"]
+    header_name = spec.get("header", "Authorization")
+    prefix = spec.get("prefix", "Bearer ")
+    timeout = spec.get("timeout", 30)
+
+    try:
+        result = subprocess.run(
+            command,  # argv array; never through a shell
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except FileNotFoundError as error:
+        sys.exit(f"profile {profile_name!r}: auth_command could not be run: {error}")
+    except subprocess.TimeoutExpired:
+        sys.exit(f"profile {profile_name!r}: auth_command timed out after {timeout}s")
+    except OSError as error:
+        sys.exit(f"profile {profile_name!r}: auth_command could not be run: {error}")
+
+    if result.returncode != 0:
+        stderr = result.stderr.strip()[:AUTH_COMMAND_STDERR_LIMIT]
+        detail = f": {stderr}" if stderr else ""
+        sys.exit(f"profile {profile_name!r}: auth_command exited with status {result.returncode}{detail}")
+
+    token = result.stdout.strip()
+    if not token:
+        sys.exit(f"profile {profile_name!r}: auth_command produced no output")
+    if _has_crlf(token):
+        sys.exit(f"profile {profile_name!r}: auth_command produced multiline output")
+
+    return header_name, f"{prefix}{token}"
+
+
+def parse_header(line):
+    name, sep, value = line.partition(":")
+    if not sep:
+        parser.error(f"invalid header {line!r}: expected 'NAME: VALUE'")
+    name, value = name.strip(), value.strip()
+    if not name:
+        parser.error(f"invalid header {line!r}: header name must not be empty")
+    if _has_crlf(name) or _has_crlf(value):
+        parser.error(f"invalid header {line!r}: header name/value must not contain CR/LF")
+    return name, value
+
+
+def resolve_connection(args):
+    """Returns {"url", "headers"} regardless of whether the source is a
+    profile or plain flags/env vars -- everything downstream (the actual
+    HTTP request) stays unaware of where it came from."""
+    override_headers = {}
+    if args.header_file:
+        try:
+            with open(args.header_file) as f:
+                lines = [line.strip() for line in f if line.strip()]
+        except OSError as error:
+            parser.error(f"cannot read --header-file: {error}")
+        for line in lines:
+            name, value = parse_header(line)
+            set_header(override_headers, name, value)
+    for header in args.header or []:
+        name, value = parse_header(header)
+        set_header(override_headers, name, value)
+
+    if args.profile:
+        profile = resolve_profile(args.profile)
+        url = profile["url"]
+
+        headers = {}
+        for name, value in (profile.get("headers") or {}).items():
+            set_header(headers, name, value)
+
+        auth_command = profile.get("auth_command")
+        if auth_command:
+            auth_header_name = auth_command.get("header", "Authorization")
+            already_overridden = any(
+                name.lower() == auth_header_name.lower() for name in override_headers
+            )
+            if not already_overridden:
+                name, value = run_auth_command(args.profile, auth_command)
+                set_header(headers, name, value)
+
+        for name, value in override_headers.items():
+            set_header(headers, name, value)
+
+        return {"url": url, "headers": headers}
+
+    if args.url:
+        url = args.url
+    else:
+        url = os.environ.get("TQ_URL") or os.environ.get("THANOS_URL")
+
+    if not url:
+        parser.error(
+            "no backend URL configured: use --profile, --url, TQ_URL, or THANOS_URL"
+        )
+    if not url.startswith(("http://", "https://")):
+        parser.error("backend URL must start with http:// or https://")
+
+    return {"url": url, "headers": override_headers}
+
+
+def profile_summary(name, profile):
+    return {
+        "name": name,
+        "url": profile.get("url"),
+        "description": profile.get("description", ""),
+        "has_headers": bool(profile.get("headers")),
+        "has_auth_command": bool(profile.get("auth_command")),
+    }
+
+
+# endregion
+
+
+parser = argparse.ArgumentParser(
+    description=DESCRIPTION,
+    formatter_class=argparse.RawTextHelpFormatter,
+    epilog="""\
+Output:
+  Instant        [{"metric": {...}, "value": [...]}, ...]
+  Range          [{"metric": {...}, "values": [...]}, ...]
+  Series         [{"__name__": "...", "<label>": "..."}, ...]
+  Labels         ["__name__", "namespace", ...]
+  Label values   ["value-a", "value-b", ...]
+
+  Prometheus's response envelope is removed by default.
+  Sample values are strings; timestamps are numbers.
+  Use --raw-response to print the complete API response.
+
+Examples:
+  tq '<promql>'                                  # Instant query
+  tq --time TIME '<promql>'                      # Instant query at a specific time
+  tq --range '<promql>'                          # Range query
+  tq --range --since 30m '<promql>'              # Range query for the last 30 minutes
+  tq --range --step 5m '<promql>'                # Range query with step
+
+  tq --series '<selector>'                       # Series label sets
+  tq --labels                                    # All distinct label names
+  tq --labels '<selector>'                       # Label names for matching series
+  tq --label-values LABEL                        # All values for a label
+  tq --label-values LABEL '<selector>'           # Values for matching series
+""",
+)
+
+parser.add_argument(
+    "query",
+    nargs="*",
+    help="PromQL query or series selector",
+)
+
+mode = parser.add_mutually_exclusive_group()
+mode.add_argument(
+    "--range",
+    action="store_true",
+    help="Evaluate QUERY over a time range",
+)
+mode.add_argument(
+    "--series",
+    action="store_true",
+    help="List label sets for series matching SELECTOR",
+)
+mode.add_argument(
+    "--labels",
+    action="store_true",
+    help="List label names, optionally restricted by SELECTOR",
+)
+mode.add_argument(
+    "--label-values",
+    metavar="LABEL",
+    help="List values for LABEL, optionally restricted by SELECTOR",
+)
+parser.add_argument(
+    "--start",
+    help="Start time (with --range, --series, --labels, or --label-values; RFC3339 or Unix timestamp)",
+)
+parser.add_argument(
+    "--end",
+    help="End time (with --range, --series, --labels, or --label-values; RFC3339 or Unix timestamp)",
+)
+parser.add_argument(
+    "--step",
+    help="Range query resolution (with --range; default: 1m)",
+)
+parser.add_argument(
+    "--since",
+    type=duration_seconds,
+    help="Relative time window from past to now (e.g., 30s, 5m, 2h, 1d, 1w)",
+)
+parser.add_argument(
+    "--query-timeout",
+    help="Server-side Thanos query deadline duration (e.g. 10s, 30s)",
+)
+parser.add_argument(
+    "--http-timeout",
+    type=http_timeout_seconds,
+    default=None,
+    help="Local HTTP/socket timeout in seconds used by Python (default: 30)",
+)
+parser.add_argument(
+    "--time",
+    help="Evaluation time (for instant queries; RFC3339 or Unix timestamp)",
+)
+parser.add_argument(
+    "--raw-response",
+    action="store_true",
+    help="Print the complete Prometheus/Thanos API response envelope",
+)
+parser.add_argument(
+    "--help-output",
+    action=OutputHelpAction,
+    nargs=0,
+    help="Show detailed output examples, formats, and jq recipes",
+)
+parser.add_argument(
+    "-H",
+    "--header",
+    action="append",
+    metavar="NAME: VALUE",
+    help="Extra HTTP header to send, e.g. -H 'Authorization: Bearer ...' (repeatable)",
+)
+parser.add_argument(
+    "--header-file",
+    metavar="FILE",
+    help=(
+        "Read extra headers from FILE, one 'NAME: VALUE' per line "
+        "(keeps secrets like bearer tokens out of argv/process listings)"
+    ),
+)
+parser.add_argument(
+    "--url",
+    metavar="URL",
+    help="Base API URL to query (overrides TQ_URL/THANOS_URL; cannot combine with --profile)",
+)
+
+profile_action = parser.add_mutually_exclusive_group()
+profile_action.add_argument(
+    "--profile",
+    metavar="NAME",
+    help="Use a named connection profile (URL + headers) from ~/.config/tq/config.json",
+)
+profile_action.add_argument(
+    "--list-profiles",
+    action="store_true",
+    help="Print configured connection profiles (JSON) and exit",
+)
+profile_action.add_argument(
+    "--show-profile",
+    metavar="NAME",
+    help="Print details for one configured connection profile (JSON) and exit",
+)
+
+# Bare `tq` should show useful help rather than only a missing-argument error.
+if len(sys.argv) == 1:
+    parser.print_help()
+    sys.exit(2)
+
+args = parser.parse_args()
+
+has_label_values = args.label_values is not None
+query = " ".join(args.query).strip() if args.query else ""
+is_profile_info = args.list_profiles or args.show_profile is not None
+
+# --list-profiles/--show-profile are their own no-query, no-network mode:
+# reject every request-related flag up front (query modes, time/step
+# selection, headers, timeouts, --url), before the usual "query required"
+# checks below (which would otherwise complain about a missing query).
+# --http-timeout defaults to None specifically so this check can tell
+# "explicitly passed" apart from "using the default" -- see normalization
+# right after this block.
+if is_profile_info:
+    flag = "--list-profiles" if args.list_profiles else "--show-profile"
+    rejected = (
+        args.query or args.range or args.series or args.labels or has_label_values
+        or args.start or args.end or args.step or args.since is not None
+        or args.time or args.query_timeout is not None or args.http_timeout is not None
+        or args.raw_response or args.header or args.header_file or args.url
+    )
+    if rejected:
+        parser.error(f"{flag} takes no query/selector expression, query mode, or request option")
+
+if args.http_timeout is None:
+    args.http_timeout = 30.0
+
+# Validate argument relationships
+if not is_profile_info:
+    # Query/selector is strictly required for instant query, range query, and series discovery.
+    is_query_required = not (args.labels or has_label_values)
+    if is_query_required and not query:
+        parser.error("the following arguments are required: query")
+
+if query == "up":
+    parser.error("query 'up' is too massive; select a specific job or matcher instead (e.g. up{job=\"...\"})")
+
+if args.profile and args.url:
+    parser.error("--profile and --url cannot be combined")
+
+if has_label_values and not args.label_values.strip():
+    parser.error("--label-values requires a non-empty label name")
+
+if args.step and not args.range:
+    parser.error("--step requires --range")
+
+if args.since is not None and (args.start or args.end):
+    parser.error("--since cannot be combined with --start or --end")
+
+if args.since is not None and not (args.range or args.series or args.labels or has_label_values):
+    parser.error("--since requires --range, --series, --labels, or --label-values")
+
+if args.start and not (args.range or args.series or args.labels or has_label_values):
+    parser.error("--start requires --range, --series, --labels, or --label-values")
+
+if args.end and not (args.range or args.series or args.labels or has_label_values):
+    parser.error("--end requires --range, --series, --labels, or --label-values")
+
+if args.time and (args.range or args.series or args.labels or has_label_values):
+    parser.error("--time is only valid for instant queries")
+
+if args.query_timeout is not None and (args.series or args.labels or has_label_values):
+    parser.error("--query-timeout is only valid for instant or range queries")
+
+if args.list_profiles:
+    data, path = load_config()
+    if data is None:
+        result = {"guidance": [], "profiles": []}
+    else:
+        result = {
+            "guidance": data.get("guidance", []),
+            "profiles": [
+                profile_summary(name, data["profiles"][name])
+                for name in sorted(data["profiles"])
+            ],
+        }
+    json.dump(result, sys.stdout, indent=2)
+    sys.stdout.write("\n")
+    sys.exit(0)
+
+if args.show_profile:
+    data, path = load_config()
+    if data is None:
+        parser.error(f"--show-profile requires a config file at {path} (not found)")
+    profiles = data["profiles"]
+    if args.show_profile not in profiles:
+        available = ", ".join(sorted(profiles)) or "(none configured)"
+        parser.error(f"unknown profile {args.show_profile!r} in {path}; available profiles: {available}")
+    profile = profiles[args.show_profile]
+    result = profile_summary(args.show_profile, profile)
+    result["guidance"] = profile.get("guidance", [])
+    auth_command = profile.get("auth_command")
+    result["auth_header_name"] = auth_command.get("header", "Authorization") if auth_command else None
+    json.dump(result, sys.stdout, indent=2)
+    sys.stdout.write("\n")
+    sys.exit(0)
+
+connection = resolve_connection(args)
+base_url = connection["url"]
+
+now = int(time.time())
+start_val = args.start
+end_val = args.end
+
+if args.since is not None:
+    end_val = str(now)
+    start_val = str(now - args.since)
+
+if has_label_values:
+    label = urllib.parse.quote(args.label_values, safe="")
+    endpoint = f"/api/v1/label/{label}/values"
+    params = {
+        "match[]": query or None,
+        "start": start_val,
+        "end": end_val,
+    }
+elif args.labels:
+    endpoint = "/api/v1/labels"
+    params = {
+        "match[]": query or None,
+        "start": start_val,
+        "end": end_val,
+    }
+elif args.series:
+    endpoint = "/api/v1/series"
+    params = {
+        "match[]": query,
+        "start": start_val,
+        "end": end_val,
+    }
+elif args.range:
+    endpoint = "/api/v1/query_range"
+    params = {
+        "query": query,
+        "start": start_val or now - 3600,
+        "end": end_val or now,
+        "step": args.step or "1m",
+        "timeout": args.query_timeout,
+    }
+else:
+    endpoint = "/api/v1/query"
+    params = {
+        "query": query,
+        "time": args.time,
+        "timeout": args.query_timeout,
+    }
+
+params = {k: v for k, v in params.items() if v is not None}
+url = f"{base_url.rstrip('/')}{endpoint}"
+
+POST_ENDPOINTS = {
+    "/api/v1/query",
+    "/api/v1/query_range",
+    "/api/v1/series",
+    "/api/v1/labels",
+}
+use_post = endpoint in POST_ENDPOINTS
+
+req_headers = connection["headers"]
+req_data = None
+
+if use_post:
+    req_data = urllib.parse.urlencode(params).encode("utf-8")
+    set_header(req_headers, "Content-Type", "application/x-www-form-urlencoded")
+else:
+    if params:
+        url = f"{url}?{urllib.parse.urlencode(params)}"
+
+req = urllib.request.Request(
+    url,
+    data=req_data,
+    headers=req_headers,
+    method="POST" if use_post else "GET"
+)
+
+try:
+    with urllib.request.urlopen(req, timeout=args.http_timeout) as response:
+        payload = json.load(response)
+
+    if not isinstance(payload, dict):
+        sys.exit("Invalid API response: expected a JSON object")
+
+    # Diagnostics on stderr (only for normalized mode to prevent duplicate output)
+    if not args.raw_response:
+        for warning in payload.get("warnings", []):
+            print(f"Warning: {warning}", file=sys.stderr)
+
+        for info in payload.get("infos", []):
+            print(f"Info: {info}", file=sys.stderr)
+
+    is_error = payload.get("status") == "error"
+
+    if args.raw_response:
+        json.dump(payload, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+        if is_error:
+            sys.exit(1)
+    else:
+        if is_error:
+            sys.exit(
+                f"Query error: {payload.get('errorType', 'unknown')}: "
+                f"{payload.get('error', 'unknown error')}"
+            )
+
+        data = payload.get("data", {})
+        if not (args.series or args.labels or has_label_values):
+            if isinstance(data, dict):
+                data = data.get("result", data)
+
+        json.dump(data, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+
+except urllib.error.HTTPError as error:
+    try:
+        body = error.read().decode("utf-8", errors="replace")
+    except OSError:
+        body = ""
+
+    payload = None
+    is_thanos_error = False
+
+    if body:
+        try:
+            payload = json.loads(body)
+            if isinstance(payload, dict) and payload.get("status") == "error" and "errorType" in payload and "error" in payload:
+                is_thanos_error = True
+        except json.JSONDecodeError:
+            pass
+
+    if is_thanos_error:
+        if args.raw_response:
+            json.dump(payload, sys.stdout, indent=2)
+            sys.stdout.write("\n")
+            sys.exit(1)
+        else:
+            sys.exit(f"Query error: {payload.get('errorType')}: {payload.get('error')}")
+
+    # Fallback if the body is not a valid Thanos error envelope
+    if body.strip():
+        sys.exit(f"HTTP {error.code}: {body}")
+    else:
+        sys.exit(f"HTTP {error.code}: {error.reason}")
+
+except TimeoutError as error:
+    sys.exit(f"Connection error: {error}")
+except urllib.error.URLError as error:
+    sys.exit(f"Connection error: {error.reason}")
+except json.JSONDecodeError as error:
+    sys.exit(f"Invalid JSON response: {error}")
+except KeyboardInterrupt:
+    sys.exit(130)

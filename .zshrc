@@ -24,6 +24,7 @@ eval "$(pyenv init -)"
 
 # PATH exports
 PATH="$HOME/source/mysettings/scripts:$PATH"
+PATH="$HOME/source/mysettings/tq:$PATH"
 PATH="$HOME/.local/bin:$PATH"
 
 ##  Override mac tools with GNU versions (installed via brew)
