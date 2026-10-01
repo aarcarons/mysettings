@@ -1,8 +1,4 @@
-[user]
-    name = Adrià Arcarons
-    email = adria.arcarons@gmail.com
-    signingkey = ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFL58zYj014IBKZBde1lqwK0mY3okM8x9wV2FFdICHHJ
-
+# Machine-specific identity (name, email, signing key) lives in the untracked ~/.gitconfig.local
 [include]
     path = .git_aliases
     path = .gitconfig.local
@@ -25,10 +21,17 @@
     file-decoration-style = none
 
 [merge]
-    conflictstyle = diff3
+    conflictstyle = zdiff3
 
 [diff]
     colorMoved = default
+    algorithm = histogram
+
+[fetch]
+    prune = true
+
+[rerere]
+    enabled = true
 
 [url "git@github.com:"]
     insteadOf = https://github.com/
@@ -44,13 +47,16 @@
 	gpgsign = true
 [pull]
     rebase = true
-    ff = only
 [push]
     autoSetupRemote = true
 [rebase]
     autoStash = true
+	autosquash = true
+	updateRefs = true
 [filter "lfs"]
 	clean = git-lfs clean -- %f
 	smudge = git-lfs smudge -- %f
 	process = git-lfs filter-process
 	required = true
+[branch]
+	sort = -committerdate
